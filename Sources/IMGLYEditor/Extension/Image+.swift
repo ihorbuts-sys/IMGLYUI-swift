@@ -83,6 +83,8 @@ public extension IMGLY where Wrapped == Image {
   static let redo = Wrapped(systemName: "arrow.uturn.forward.circle")
   /// An icon image for export.
   static let export = Wrapped(systemName: "square.and.arrow.up")
+  /// An icon image for check duration.
+  static let checkDuration = Wrapped(systemName: "arrow.right")
   /// An icon image for toggling preview mode.
   static let preview = Wrapped(systemName: "eye")
   /// An icon image for toggling pages mode.
