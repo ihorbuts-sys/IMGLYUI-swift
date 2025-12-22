@@ -139,7 +139,7 @@ private extension Engine {
         }
 
         let fillBlock = try block.getFill(videoBlock)
-        try block.setFrame(videoBlock, value: video.rect)
+        try block.setFrame(videoBlock, value: frame)
 
         if
             let isTrimSupported = try? block.supportsTrim(fillBlock), isTrimSupported,
