@@ -12,8 +12,10 @@ struct FilterOptions: View {
       let type = try? engine.block.getType(effect)
       return type?.isFilter ?? false
     }) {
-      if let sourceURL: String = try? engine.block.get(filter, property: .key(.filterLUTFileURI)) {
-        return AssetSelection(identifier: sourceURL, assetURL: sourceURL, id: filter)
+      if let filterId: String = try? engine.block.get(filter, property: .key(.filterLUTFilterId)),
+         !filterId.isEmpty {
+        let sourceURL: String? = try? engine.block.get(filter, property: .key(.filterLUTFileURI))
+        return AssetSelection(identifier: filterId, assetURL: sourceURL, id: filter)
       } else if let lightColor: CGColor = try? engine.block.get(filter, property: .key(.filterDuoToneLightColor)),
                 let darkColor: CGColor = try? engine.block.get(filter, property: .key(.filterDuoToneDarkColor)),
                 let lightHex = try? lightColor.hex(),
@@ -36,6 +38,11 @@ struct FilterOptions: View {
       }
       let filter = try engine.block.createEffect(.lutFilter)
       try engine.block.set(filter, property: .key(.filterLUTFileURI), value: source)
+      // Set the filterId immediately so the UI can highlight the selected filter
+      // before the engine downloads the LUT file
+      if let filterId = value.identifier {
+        try engine.block.set(filter, property: .key(.filterLUTFilterId), value: filterId)
+      }
       let horizontalTileCount = Int(value.metadata?[.horizontalTileCount] ?? "5") ?? 5
       let verticalTileCount = Int(value.metadata?[.verticalTileCount] ?? "5") ?? 5
       try engine.block.set(filter, property: .key(.filterLUTHorizontalTileCount), value: horizontalTileCount)
@@ -111,7 +118,7 @@ struct FilterOptions: View {
       }
       return "ly.filter.duotone.\(lightColor).\(darkColor)"
     } else {
-      return asset.result.url?.absoluteString
+      return asset.result.id
     }
   }
 }

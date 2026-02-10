@@ -228,6 +228,11 @@ extension Interactor: EditorEventHandler {
       if let content = sheetContentForSelection {
         self.sheet = .init(sheet, content)
       }
+    case let sheet as SheetTypes.ClipSpeed:
+      clampPlayheadPositionToSelectedClip()
+      if let content = sheetContentForSelection {
+        self.sheet = .init(sheet, content)
+      }
     case let sheet as SheetTypes.TextBackground:
       clampPlayheadPositionToSelectedClip()
       if let content = sheetContentForSelection {
