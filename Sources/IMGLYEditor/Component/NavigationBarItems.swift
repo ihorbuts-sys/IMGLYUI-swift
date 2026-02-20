@@ -20,6 +20,8 @@ public extension NavigationBar.Buttons.ID {
   static var redo: EditorComponentID { "ly.img.component.navigationBar.button.redo" }
   /// The id of the ``NavigationBar/Buttons/export(action:label:isEnabled:isVisible:)`` button.
   static var export: EditorComponentID { "ly.img.component.navigationBar.button.export" }
+  /// The id of the ``NavigationBar/Buttons/checkIfDurationCorrect(action:label:isEnabled:isVisible:)`` button.
+  static var checkIfDurationCorrect: EditorComponentID { "ly.img.component.navigationBar.button.checkIfDurationCorrect" }
   /// The id of the ``NavigationBar/Buttons/togglePreviewMode(action:label:isEnabled:isVisible:)`` button.
   static var togglePreviewMode: EditorComponentID { "ly.img.component.navigationBar.button.togglePreviewMode" }
   /// The id of the ``NavigationBar/Buttons/togglePagesMode(action:label:isEnabled:isVisible:)`` button.
@@ -151,6 +153,33 @@ public extension NavigationBar.Buttons {
   ) -> some NavigationBar.Item {
     NavigationBar.Button(id: ID.export, action: action, label: label, isEnabled: isEnabled, isVisible: isVisible)
   }
+
+    static func checkIfDurationCorrect(
+        action: @escaping NavigationBar.Context.To<Void> = { $0.eventHandler.send(.checkDurationLimitations) },
+      @ViewBuilder label: @escaping NavigationBar.Context.To<some View> = { _ in
+        Label { Text(.imgly.localized("ly_img_editor_navigation_bar_button_export")) } icon: { Image.imgly.checkDuration }
+          .labelStyle(.imgly.adaptiveIconOnly)
+      },
+      isEnabled: @escaping NavigationBar.Context.To<Bool> = {
+        if !$0.state.isCreating, !$0.state.isExporting, let engine = $0.engine, let scene = try engine.scene.get() {
+          try engine.scene.getMode() == .design || engine.block.getDuration(scene) > 0
+        } else {
+          false
+        }
+      },
+      isVisible: @escaping NavigationBar.Context.To<Bool> = {
+        if !$0.state.isCreating, let engine = $0.engine {
+          try $0.state.viewMode != .edit || (
+            engine.editor.getSettingBool("features/pageCarouselEnabled") ||
+              engine.scene.getPages().last == engine.scene.getCurrentPage()
+          )
+        } else {
+          true
+        }
+      },
+    ) -> some NavigationBar.Item {
+      NavigationBar.Button(id: ID.export, action: action, label: label, isEnabled: isEnabled, isVisible: isVisible)
+    }
 
   /// Creates a ``NavigationBar/Button`` that toggles between preview and edit mode.
   /// - Parameters:

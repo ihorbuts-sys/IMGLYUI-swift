@@ -37,6 +37,7 @@ import SwiftUI
   var isPreviewMode: Bool { viewMode == .preview }
   var isPagesMode: Bool { viewMode == .pages }
   @Published private(set) var isExporting = false
+  var exportCanceled = false
   @Published @_spi(Internal) public private(set) var isAddingAsset = false
 
   @Published var error = AlertState()
@@ -1209,6 +1210,7 @@ extension Interactor {
   }
 
   func cancelExport() {
+    exportCanceled = true
     exportTask?.cancel()
   }
 
@@ -1525,6 +1527,39 @@ extension Interactor {
   func showErrorAlert(_ error: Swift.Error, _ onDismiss: @escaping () -> Void) {
     handleErrorAndDismiss(error, onDismiss)
   }
+
+    func checkDurationBeforeExport() {
+      pause()
+      let lastTask = exportTask
+      lastTask?.cancel()
+      isExporting = true
+      exportTask = Task(priority: .userInitiated) {
+        _ = await lastTask?.result
+        if Task.isCancelled {
+          return
+        }
+
+        guard let engine else {
+          return
+        }
+
+        do {
+          try await config.callbacks.onCheck(engine, self)
+        } catch is CancellationError {
+          hideExportSheet()
+        } catch {
+          if export.isPresented {
+            showExportSheet(.error(error) { [weak self] in
+              self?.hideExportSheet()
+            })
+          } else {
+            handleError(error)
+          }
+        }
+
+        isExporting = false
+      }
+    }
 
   func exportScene() {
     pause()
