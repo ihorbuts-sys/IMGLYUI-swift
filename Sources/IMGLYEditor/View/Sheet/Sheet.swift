@@ -35,7 +35,7 @@ struct Sheet: View {
         .imgly.fontFamilies(sheet.fontFamilies)
     case let sheet as SheetTypes.Crop:
       CropOptionsSheet(sources: sheet.assetSourceIDs)
-    case is SheetTypes.Voiceover: VoiceoverSheet()
+    case is SheetTypes.Voiceover: VoiceOverSheet()
     case is SheetTypes.Reorder: ReorderOptionsSheet()
     case is SheetTypes.Adjustments: AdjustmentsOptionsSheet()
     case is SheetTypes.Filter: FilterOptionsSheet()
@@ -44,10 +44,11 @@ struct Sheet: View {
     case is SheetTypes.Layer: LayerOptionsSheet()
     case is SheetTypes.FormatText: FormatTextOptionsSheet()
     case is SheetTypes.Shape: ShapeOptionsSheet()
-    case is SheetTypes.FillStroke: FillStrokeOptionsSheet()
+    case let sheet as SheetTypes.FillStroke: FillStrokeOptionsSheet(fillOnly: sheet.fillOnly)
     case is SheetTypes.TextBackground: BackgroundOptionsSheet()
     case is SheetTypes.Volume: VolumeOptionsSheet()
     case is SheetTypes.ClipSpeed: ClipSpeedOptionsSheet()
+    case is SheetTypes.Animation: AnimationOptionsSheet()
     case is SheetTypes.Resize: ResizeOptionsSheet()
     case is SheetTypes.DesignColors: SelectionColorsSheet()
     case is SheetTypes.GreetingSize: FontSizeSheet()
@@ -79,7 +80,6 @@ struct Sheet: View {
         sheet(mode)
       }
     }
-    .imgly.assetLibrary(sceneMode: interactor.sceneMode)
     .imgly.assetLibrary(interactor: interactor)
     .imgly.assetLibraryDismissButton {
       SheetDismissButton()

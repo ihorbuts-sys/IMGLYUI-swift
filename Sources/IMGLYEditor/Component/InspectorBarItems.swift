@@ -1,3 +1,4 @@
+@_spi(Internal) import IMGLYCore
 import IMGLYEngine
 import SwiftUI
 
@@ -12,8 +13,8 @@ public extension InspectorBar.Buttons {
 }
 
 public extension InspectorBar.Buttons.ID {
-  /// The id of the ``InspectorBar/Buttons/editVoiceover(action:title:icon:isEnabled:isVisible:)`` button.
-  static var editVoiceover: EditorComponentID { "ly.img.component.inspectorBar.button.editVoiceover" }
+  /// The id of the ``InspectorBar/Buttons/addVoiceoverRecording(action:title:icon:isEnabled:isVisible:)`` button.
+  static var addVoiceoverRecording: EditorComponentID { "ly.img.component.inspectorBar.button.addVoiceoverRecording" }
   /// The id of the ``InspectorBar/Buttons/reorder(action:title:icon:isEnabled:isVisible:)`` button.
   static var reorder: EditorComponentID { "ly.img.component.inspectorBar.button.reorder" }
   /// The id of the ``InspectorBar/Buttons/adjustments(action:title:icon:isEnabled:isVisible:)`` button.
@@ -58,35 +59,38 @@ public extension InspectorBar.Buttons.ID {
   static var shape: EditorComponentID { "ly.img.component.inspectorBar.button.shape" }
   /// The id of the ``InspectorBar/Buttons/textBackground(action:title:icon:isEnabled:isVisible:)`` button.
   static var textBackground: EditorComponentID { "ly.img.component.inspectorBar.button.textBackground" }
+  /// The id of the ``InspectorBar/Buttons/animation(action:title:icon:isEnabled:isVisible:)`` button.
+  static var animation: EditorComponentID { "ly.img.component.inspectorBar.button.animation" }
 }
 
 @MainActor
 public extension InspectorBar.Buttons {
-  /// Creates a ``InspectorBar/Button`` that opens the voiceover sheet.
+  /// Creates a ``InspectorBar/Button`` that starts a new voiceover recording from a selected voiceover clip.
   /// - Parameters:
-  ///   - action: The action to perform when the user triggers the button.  By default, ``EditorEvent/openSheet(type:)``
-  /// event is invoked with sheet type ``SheetType/voiceover(style:)``.
+  ///   - action: The action to perform when the user triggers the button. By default, the voiceover record flow is
+  /// opened for an additional recording on a fresh draft track.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
-  /// `ly_img_editor_inspector_bar_button_edit_voiceover` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/editVoiceover``  is
+  /// `ly_img_editor_sheet_voiceover_button_add_recording` is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image`
+  /// ``IMGLYCore/IMGLY/addVoiceover`` is
   /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// `DesignBlockType.audio` and its kind is `"voiceover"`.
   /// - Returns: The created button.
-  static func editVoiceover(
+  static func addVoiceoverRecording(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.openSheet(type: .voiceover())) },
     @ViewBuilder title: @escaping InspectorBar.Context.To<some View> = { _ in
-      Text(.imgly.localized("ly_img_editor_inspector_bar_button_edit_voiceover"))
+      Text(.imgly.localized("ly_img_editor_sheet_voiceover_button_add_recording"))
     },
-    @ViewBuilder icon: @escaping InspectorBar.Context.To<some View> = { _ in Image.imgly.editVoiceover },
+    @ViewBuilder icon: @escaping InspectorBar.Context.To<some View> = { _ in Image.imgly.addVoiceover },
     isEnabled: @escaping InspectorBar.Context.To<Bool> = { _ in true },
     isVisible: @escaping InspectorBar.Context.To<Bool> = {
       $0.selection.type == .audio &&
         $0.selection.kind == "voiceover"
     },
   ) -> some InspectorBar.Item {
-    InspectorBar.Button(id: ID.editVoiceover, action: action, label: { context in
+    InspectorBar.Button(id: ID.addVoiceoverRecording, action: action, label: { context in
       let title = try title(context)
       let icon = try icon(context)
       Label { title } icon: { icon }
@@ -99,7 +103,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/reorder(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_reorder` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/reorder``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/reorder``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block is the
   /// background track with more than one child.
@@ -143,7 +148,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/adjustments(style:id:)`` for the selected design block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_adjustments` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/adjustments``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/adjustments``
+  ///  is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block has a
   /// fill type `FillType.video` or `.image`, its kind is not `"sticker"` or `"animatedSticker"`, and its engine scope
@@ -178,7 +184,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/filter(style:id:)`` for the selected design block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_filter` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/filter``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/filter``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block has a
   /// fill type `FillType.video` or `.image`, its kind is not `"sticker"` or `"animatedSticker"`, and its engine
@@ -213,7 +220,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/effect(style:id:)`` for the selected design block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_effect` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/effect``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/effect``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block has a
   /// fill type `FillType.video` or `.image`, its kind is not `"sticker"` or `"animatedSticker"`, and its engine
@@ -248,7 +256,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/blur(style:id:)`` for the selected design block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_blur` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/blur``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/blur``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block has a
   /// fill type `FillType.video` or `.image`, its kind is not `"sticker"` or `"animatedSticker"`, and its engine
@@ -283,7 +292,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/volume(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_volume` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/volume``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/volume``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is enabled if the selected block has no video fill,
   ///   neither the block nor its fill supports playback control, or the playback speed is not more than 3.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
@@ -327,7 +337,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/clipSpeed(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_clip_speed` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/clipSpeed``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/clipSpeed``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block or its
   /// fill supports playback control and its engine scope `"fill/change"` is allowed.
@@ -353,10 +364,7 @@ public extension InspectorBar.Buttons {
       let playbackFillType = try? FillType(rawValue: context.engine.block.getType(playbackBlock))
       let selectionFillType = context.selection.fillType
       let isAudio = context.selection.type == .audio
-      let isVideoScene = try context.engine.scene.getMode() == .video
-      return try isVideoScene &&
-        (isAudio || selectionFillType == .video || playbackFillType == .video) &&
-        context.selection.kind != "voiceover" &&
+      return try (isAudio || selectionFillType == .video || playbackFillType == .video) &&
         context.engine.block.isAllowedByScope(context.selection.block, key: "fill/change")
     },
   ) -> some InspectorBar.Item {
@@ -373,7 +381,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/crop(style:id:assetSourceIDs:)`` for the selected design block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_crop` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/crop``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/crop``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block has a
   /// fill type `FillType.video` or `.image`, its kind is not `"sticker"` or `"animatedSticker"`, and its engine
@@ -383,7 +392,7 @@ public extension InspectorBar.Buttons {
     action: @escaping InspectorBar.Context.To<Void> = {
       $0.eventHandler.send(.openSheet(type: .crop(
         id: $0.selection.block,
-        assetSourceIDs: [Engine.DefaultAssetSource.cropPresets.rawValue],
+        assetSourceIDs: ["ly.img.crop.presets"],
       )))
     },
     @ViewBuilder title: @escaping InspectorBar.Context.To<some View> = { _ in
@@ -412,11 +421,11 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/duplicateSelection`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_duplicate` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/duplicate``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/duplicate``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
-  /// not `DesignBlockType.page`, its kind is not `"voiceover"`, and its engine scope `"lifecycle/duplicate"` is
-  /// allowed.
+  /// not `DesignBlockType.page` and its engine scope `"lifecycle/duplicate"` is allowed.
   /// - Returns: The created button.
   static func duplicate(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.duplicateSelection) },
@@ -427,7 +436,6 @@ public extension InspectorBar.Buttons {
     isEnabled: @escaping InspectorBar.Context.To<Bool> = { _ in true },
     isVisible: @escaping InspectorBar.Context.To<Bool> = { context in
       try context.selection.type != .page &&
-        context.selection.kind != "voiceover" &&
         context.engine.block.isAllowedByScope(context.selection.block, key: "lifecycle/duplicate")
     },
   ) -> some InspectorBar.Item {
@@ -444,7 +452,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/layer(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_layer` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/layer``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/layer``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// not `DesignBlockType.page`, its kind is not `"voiceover"`, and its engine scope `"layer/blendMode"`,
@@ -493,10 +502,10 @@ public extension InspectorBar.Buttons {
   /// event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_split` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/split``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/split``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
-  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the scene mode is
-  /// `SceneMode.video`, the selected design block kind is not `"voiceover"`, and its engine scope
+  ///   - isVisible: Whether the button is visible. By default, it is only `true` if its engine scope
   /// `"lifecycle/duplicate"` is allowed.
   /// - Returns: The created button.
   static func split(
@@ -507,9 +516,7 @@ public extension InspectorBar.Buttons {
     @ViewBuilder icon: @escaping InspectorBar.Context.To<some View> = { _ in Image.imgly.split },
     isEnabled: @escaping InspectorBar.Context.To<Bool> = { _ in true },
     isVisible: @escaping InspectorBar.Context.To<Bool> = {
-      try $0.engine.scene.getMode() == .video &&
-        $0.selection.kind != "voiceover" &&
-        $0.engine.block.isAllowedByScope($0.selection.block, key: "lifecycle/duplicate")
+      try $0.engine.block.isAllowedByScope($0.selection.block, key: "lifecycle/duplicate")
     },
   ) -> some InspectorBar.Item {
     InspectorBar.Button(id: ID.split, action: action, label: { context in
@@ -522,7 +529,7 @@ public extension InspectorBar.Buttons {
   /// Creates a ``InspectorBar/Button`` that opens the fill and stroke sheet.
   /// - Parameters:
   ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/openSheet(type:)``
-  /// event is invoked with sheet type ``SheetType/fillStroke(style:)``.
+  /// event is invoked with sheet type ``SheetType/fillStroke(style:fillOnly:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_fill_and_stroke`,  `ly_img_editor_inspector_bar_button_fill`, or
   /// `ly_img_editor_inspector_bar_button_stroke` is used depending on the fill type and allowed engine scopes for the
@@ -536,11 +543,15 @@ public extension InspectorBar.Buttons {
   static func fillStroke(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.openSheet(type: .fillStroke())) },
     @ViewBuilder title: @escaping InspectorBar.Context.To<some View> = {
-      let showFill = try [.none, .color, .linearGradient].contains($0.selection.fillType) &&
-        $0.engine.block.supportsFill($0.selection.block) &&
-        $0.engine.block.isAllowedByScope($0.selection.block, key: "fill/change")
       let showStroke = try $0.engine.block.supportsStroke($0.selection.block) &&
         $0.engine.block.isAllowedByScope($0.selection.block, key: "stroke/change")
+      // Line-origin graphics surface their colour through the stroke section, so the fill is
+      // hidden when a stroke section is available — matching the sheet this button opens.
+      let hideFillForLine = try $0.engine.block.isLineOrigin($0.selection.block) && showStroke
+      let showFill = try [.none, .color, .linearGradient].contains($0.selection.fillType) &&
+        $0.engine.block.supportsFill($0.selection.block) &&
+        !hideFillForLine &&
+        $0.engine.block.isAllowedByScope($0.selection.block, key: "fill/change")
       if showFill, showStroke {
         return Text(.imgly.localized("ly_img_editor_inspector_bar_button_fill_and_stroke"))
       } else if showFill {
@@ -552,11 +563,15 @@ public extension InspectorBar.Buttons {
     @ViewBuilder icon: @escaping InspectorBar.Context.To<some View> = { FillStrokeIcon(id: $0.selection.block) },
     isEnabled: @escaping InspectorBar.Context.To<Bool> = { _ in true },
     isVisible: @escaping InspectorBar.Context.To<Bool> = {
-      let showFill = try [.none, .color, .linearGradient].contains($0.selection.fillType) &&
-        $0.engine.block.supportsFill($0.selection.block) &&
-        $0.engine.block.isAllowedByScope($0.selection.block, key: "fill/change")
       let showStroke = try $0.engine.block.supportsStroke($0.selection.block) &&
         $0.engine.block.isAllowedByScope($0.selection.block, key: "stroke/change")
+      // Line-origin graphics surface their colour through the stroke section, so the fill is
+      // hidden when a stroke section is available — matching the sheet this button opens.
+      let hideFillForLine = try $0.engine.block.isLineOrigin($0.selection.block) && showStroke
+      let showFill = try [.none, .color, .linearGradient].contains($0.selection.fillType) &&
+        $0.engine.block.supportsFill($0.selection.block) &&
+        !hideFillForLine &&
+        $0.engine.block.isAllowedByScope($0.selection.block, key: "fill/change")
       return $0.selection.kind != "sticker" && $0.selection.kind != "animatedSticker" &&
         (showFill || showStroke)
     },
@@ -574,11 +589,11 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/moveSelectionAsClip`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_move_as_clip` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/moveAsClip``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/moveAsClip``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
-  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the scene mode is
-  /// `SceneMode.video`, the selected design block type is not `DesignBlockType.audio`, and its parent is not the
-  /// background track.
+  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
+  /// not `DesignBlockType.audio` and its parent is not the background track.
   /// - Returns: The created button.
   static func moveAsClip(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.moveSelectionAsClip) },
@@ -596,8 +611,7 @@ public extension InspectorBar.Buttons {
           false
         }
       }
-      return try context.engine.scene.getMode() == .video &&
-        context.selection.type != .audio &&
+      return try context.selection.type != .audio &&
         !isBackgroundTrack(context.selection.parentBlock)
     },
   ) -> some InspectorBar.Item {
@@ -614,12 +628,12 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/moveSelectionAsOverlay`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_move_as_overlay` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/moveAsOverlay``  is
+  ///   - icon: The icon view which is used to label the button. By default, the `Image`
+  /// ``IMGLYCore/IMGLY/moveAsOverlay``  is
   /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
-  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the scene mode is
-  /// `SceneMode.video`, the selected design block type is not `DesignBlockType.audio`, and its parent is the background
-  /// track.
+  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
+  /// not `DesignBlockType.audio` and its parent is the background track.
   /// - Returns: The created button.
   static func moveAsOverlay(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.moveSelectionAsOverlay) },
@@ -637,8 +651,7 @@ public extension InspectorBar.Buttons {
           false
         }
       }
-      return try context.engine.scene.getMode() == .video &&
-        context.selection.type != .audio &&
+      return try context.selection.type != .audio &&
         isBackgroundTrack(context.selection.parentBlock)
     },
   ) -> some InspectorBar.Item {
@@ -653,13 +666,15 @@ public extension InspectorBar.Buttons {
   /// - Parameters:
   ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/openSheet(type:)``
   /// event is invoked with sheet type ``SheetType/libraryReplace(style:content:)`` where the library content is picked
-  /// from the ``AssetLibrary`` based on the `DesignBlockType`, `FillType`, and kind of the selected design block.
+  /// from the ``IMGLYCoreUI/AssetLibrary`` based on the `DesignBlockType`, `FillType`, and kind of the selected design
+  /// block.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_replace` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/replace``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/replace``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
-  /// `DesignBlockType.audio` or `.graphic`, its fill type is `FillType.video` or `.image`, its engine scope
+  /// `DesignBlockType.audio`, `.graphic`, or `.page`, its fill type is `FillType.video` or `.image`, its engine scope
   /// `"fill/change"` is allowed and its kind is not `"voiceover"`, `"sticker"` or `"animatedSticker"`.
   /// - Returns: The created button.
   static func replace(
@@ -682,6 +697,17 @@ public extension InspectorBar.Buttons {
               "Unsupported fillType \(context.selection.fillType?.rawValue ?? "") for replace inspector bar button.",
             )
           }
+        case .page:
+          switch context.selection.fillType {
+          case .video:
+            context.assetLibrary.videosTab
+          case .image:
+            context.assetLibrary.imagesTab
+          default:
+            throw EditorError(
+              "Unsupported fillType \(context.selection.fillType?.rawValue ?? "") for replace inspector bar button.",
+            )
+          }
         default:
           throw EditorError(
             "Unsupported type \(context.selection.type?.rawValue ?? "") for replace inspector bar button.",
@@ -698,7 +724,10 @@ public extension InspectorBar.Buttons {
     isVisible: @escaping InspectorBar.Context.To<Bool> = {
       try (
         ($0.selection.type == .audio && $0.selection.kind != "voiceover") ||
-          ($0.selection.type == .graphic && [.image, .video].contains($0.selection.fillType))
+          (
+            ($0.selection.type == .graphic || $0.selection.type == .page) &&
+              [.image, .video].contains($0.selection.fillType)
+          ),
       ) && $0.engine.block.isAllowedByScope($0.selection.block, key: "fill/change") &&
         $0.selection.kind != "sticker" && $0.selection.kind != "animatedSticker"
     },
@@ -717,7 +746,8 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/enterGroupForSelection`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_enter_group` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/enterGroup``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/enterGroup``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// `DesignBlockType.group`.
@@ -746,7 +776,8 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/selectGroupForSelection`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_select_group` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/selectGroup``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/selectGroup``
+  ///  is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block is part
   /// of a group.
@@ -782,7 +813,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_delete` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/delete``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/delete``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// not `DesignBlockType.page`, and its engine scope `"lifecycle/destroy"` is allowed.
@@ -812,7 +844,8 @@ public extension InspectorBar.Buttons {
   /// ``EditorEvent/enterTextEditModeForSelection`` event is invoked.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_edit_text` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/editText``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/editText``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// `DesignBlockType.text` and its engine scope `"text/edit"` is allowed.
@@ -842,7 +875,8 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/formatText(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_format_text` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/formatText``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/formatText``
+  /// is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type is
   /// `DesignBlockType.text` and its engine scope `"text/character"` is allowed.
@@ -872,11 +906,13 @@ public extension InspectorBar.Buttons {
   /// event is invoked with sheet type ``SheetType/shape(style:)``.
   ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
   /// `ly_img_editor_inspector_bar_button_shape` is used.
-  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLY/shape``  is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/shape``  is
+  /// used.
   ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block fill type
   /// is not `FillType.image` or its kind is not `"sticker"` and its kind is not `"animatedSticker"`, its engine
-  /// scope `"shape/change"` is allowed, and its shape type is `ShapeType.line`, `.star`, `.polygon`, or `.rect`.
+  /// scope `"shape/change"` is allowed, and its shape type is `ShapeType.star`, `.polygon`, or `.rect`. Lines are
+  /// excluded because their thickness is configured via the stroke section, not shape options.
   /// - Returns: The created button.
   static func shape(
     action: @escaping InspectorBar.Context.To<Void> = { $0.eventHandler.send(.openSheet(type: .shape())) },
@@ -890,7 +926,7 @@ public extension InspectorBar.Buttons {
         $0.selection.kind != "animatedSticker" &&
         $0.engine.block.isAllowedByScope($0.selection.block, key: "shape/change") &&
         $0.engine.block.supportsShape($0.selection.block) &&
-        [.line, .star, .polygon, .rect].contains(
+        [.star, .polygon, .rect].contains(
           ShapeType(rawValue: $0.engine.block.getType($0.engine.block.getShape($0.selection.block))),
         )
     },
@@ -926,6 +962,40 @@ public extension InspectorBar.Buttons {
     },
   ) -> some InspectorBar.Item {
     InspectorBar.Button(id: ID.textBackground, action: action, label: { context in
+      let title = try title(context)
+      let icon = try icon(context)
+      Label { title } icon: { icon }
+    }, isEnabled: isEnabled, isVisible: isVisible)
+  }
+
+  /// Creates a ``InspectorBar/Button`` that opens the animation sheet.
+  /// - Parameters:
+  ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/openSheet(type:)``
+  /// event is invoked with sheet type ``SheetType/animation(style:)``.
+  ///   - title: The title view which is used to label the button. By default, the `Text` with localization key
+  /// `ly_img_editor_inspector_bar_button_animations` is used.
+  ///   - icon: The icon view which is used to label the button. By default, the `Image` ``IMGLYCore/IMGLY/animation``
+  /// is used.
+  ///   - isEnabled: Whether the button is enabled. By default, it is always `true`.
+  ///   - isVisible: Whether the button is visible. By default, it is only `true` if the selected design block type
+  /// is not `DesignBlockType.page` or `.audio`, and the block supports animation.
+  /// - Returns: The created button.
+  static func animation(
+    action: @escaping InspectorBar.Context.To<Void> = {
+      $0.eventHandler.send(.openSheet(type: .animation()))
+    },
+    @ViewBuilder title: @escaping InspectorBar.Context.To<some View> = { _ in
+      Text(.imgly.localized("ly_img_editor_inspector_bar_button_animations"))
+    },
+    @ViewBuilder icon: @escaping InspectorBar.Context.To<some View> = { _ in Image.imgly.animation },
+    isEnabled: @escaping InspectorBar.Context.To<Bool> = { _ in true },
+    isVisible: @escaping InspectorBar.Context.To<Bool> = { context in
+      try context.selection.type != .page &&
+        context.selection.type != .audio &&
+        context.engine.block.supportsAnimation(context.selection.block)
+    },
+  ) -> some InspectorBar.Item {
+    InspectorBar.Button(id: ID.animation, action: action, label: { context in
       let title = try title(context)
       let icon = try icon(context)
       Label { title } icon: { icon }

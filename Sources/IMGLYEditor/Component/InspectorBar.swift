@@ -1,12 +1,6 @@
 import IMGLYEngine
 import SwiftUI
 
-@_spi(Internal) public extension EnvironmentValues {
-  @Entry var imglyInspectorBarItems: InspectorBar.Items?
-  @Entry var imglyInspectorBarModifications: InspectorBar.Modifications?
-  @Entry var imglyInspectorBarEnabled: InspectorBar.Enabled = { _ in true }
-}
-
 /// A namespace for the inspector bar component.
 public enum InspectorBar {}
 
@@ -27,7 +21,7 @@ public extension InspectorBar {
     /// animations.
     public let engine: Engine
     public let eventHandler: EditorEventHandler
-    /// The asset library configured with the ``IMGLY/assetLibrary(_:)`` view modifier.
+    /// The configured ``IMGLYCoreUI/AssetLibrary``.
     public let assetLibrary: any AssetLibrary
     /// The current selection.
     /// - Note: Prefer using this provided selection property instead of querying the same data from engine because the
@@ -48,11 +42,10 @@ extension InspectorBar.Button: InspectorBar.Item where Context == InspectorBar.C
 
 public extension InspectorBar.Context {
   /// Cached properties of the current selection.
+  @MainActor
   struct Selection {
     /// The id of the current selected design block.
     public let block: DesignBlockID
-    /// The id of the parent design block of the current selected design ``block``.
-    public let parentBlock: DesignBlockID?
     /// The type of the current selected design ``block``.
     public let type: DesignBlockType?
     /// The fill type of the current selected design ``block``.
@@ -60,10 +53,16 @@ public extension InspectorBar.Context {
     /// The kind of the current selected design ``block``.
     public let kind: String?
 
-    @MainActor
+    private let engine: Engine
+
+    /// The id of the parent design block of the current selected design ``block``.
+    public var parentBlock: DesignBlockID? {
+      try? engine.block.getParent(block)
+    }
+
     init(block: DesignBlockID, engine: Engine) throws {
       self.block = block
-      parentBlock = try engine.block.getParent(block)
+      self.engine = engine
       type = try .init(rawValue: engine.block.getType(block))
       fillType = try engine.block
         .supportsFill(block) ? .init(rawValue: engine.block.getType(engine.block.getFill(block))) : nil
@@ -72,6 +71,7 @@ public extension InspectorBar.Context {
   }
 }
 
-@_spi(Internal) public extension InspectorBar {
+public extension InspectorBar {
+  /// A type to set whether the inspector bar is enabled.
   typealias Enabled = Context.To<Bool>
 }

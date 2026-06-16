@@ -70,7 +70,8 @@ public extension NavigationBar.Buttons {
   ///   - action: The action to perform when the user triggers the button. By default, engine `EditorAPI.undo()` is
   /// invoked.
   ///   - label: A view that describes the purpose of the button’s `action`. By default, a `Label` with localization key
-  /// `ly_img_editor_navigation_bar_button_undo`, icon ``IMGLY/undo``, and style ``IMGLY/adaptiveIconOnly`` is used.
+  /// `ly_img_editor_navigation_bar_button_undo`, icon ``IMGLYCore/IMGLY/undo``, and style
+  /// ``IMGLYCore/IMGLY/adaptiveIconOnly`` is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is created, the current
   /// view mode is not ``EditorViewMode/preview``, and engine `EditorAPI.canUndo()` is `true`.
   ///   - isVisible: Whether the button is visible. By default, it is always `true`.
@@ -95,7 +96,8 @@ public extension NavigationBar.Buttons {
   ///   - action: The action to perform when the user triggers the button. By default, engine `EditorAPI.redo()` is
   /// invoked.
   ///   - label: A view that describes the purpose of the button’s `action`. By default, a `Label` with localization key
-  /// `ly_img_editor_navigation_bar_button_redo`, icon ``IMGLY/redo``, and style ``IMGLY/adaptiveIconOnly`` is used.
+  /// `ly_img_editor_navigation_bar_button_redo`, icon ``IMGLYCore/IMGLY/redo``, and style
+  /// ``IMGLYCore/IMGLY/adaptiveIconOnly`` is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is created, the current
   /// view mode is not ``EditorViewMode/preview``, and engine `EditorAPI.canRedo()` is `true`.
   ///   - isVisible: Whether the button is visible. By default, it is always `true`.
@@ -120,9 +122,10 @@ public extension NavigationBar.Buttons {
   ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/startExport`` event
   /// is invoked.
   ///   - label: A view that describes the purpose of the button’s `action`. By default, a `Label` with localization key
-  /// `ly_img_editor_navigation_bar_button_export`, icon ``IMGLY/export``, and style ``IMGLY/adaptiveIconOnly`` is used.
-  ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is created, is not
-  /// exporting, and scene mode is `SceneMode.design` or the scene has a duration greater than 0.
+  /// `ly_img_editor_navigation_bar_button_export`, icon ``IMGLYCore/IMGLY/export``, and style
+  /// ``IMGLYCore/IMGLY/adaptiveIconOnly`` is used.
+  ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is not creating and not
+  /// exporting.
   ///   - isVisible: Whether the button is visible. By default, it is only `true` while the editor is being created or
   /// if the current view mode is not ``EditorViewMode/edit`` or engine setting `"features/pageCarouselEnabled"` is
   /// `true` or the current page is the last page of the scene.
@@ -134,11 +137,7 @@ public extension NavigationBar.Buttons {
         .labelStyle(.imgly.adaptiveIconOnly)
     },
     isEnabled: @escaping NavigationBar.Context.To<Bool> = {
-      if !$0.state.isCreating, !$0.state.isExporting, let engine = $0.engine, let scene = try engine.scene.get() {
-        try engine.scene.getMode() == .design || engine.block.getDuration(scene) > 0
-      } else {
-        false
-      }
+      !$0.state.isCreating && !$0.state.isExporting
     },
     isVisible: @escaping NavigationBar.Context.To<Bool> = {
       if !$0.state.isCreating, let engine = $0.engine {
@@ -186,8 +185,8 @@ public extension NavigationBar.Buttons {
   ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/setViewMode(_:)``
   /// event is invoked.
   ///   - label: A view that describes the purpose of the button’s `action`. By default, a `Label` with localization key
-  /// `ly_img_editor_navigation_bar_button_toggle_preview_mode`, icon ``IMGLY/preview``, and style
-  /// ``IMGLY/adaptiveIconOnly`` is used.
+  /// `ly_img_editor_navigation_bar_button_toggle_preview_mode`, icon ``IMGLYCore/IMGLY/preview``, and style
+  /// ``IMGLYCore/IMGLY/adaptiveIconOnly`` is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is created.
   ///   - isVisible: Whether the button is visible.  By default, it is always `true`.
   /// - Returns: The created button.
@@ -232,8 +231,8 @@ public extension NavigationBar.Buttons {
   ///   - action: The action to perform when the user triggers the button. By default, ``EditorEvent/setViewMode(_:)``
   /// event is invoked.
   ///   - label: A view that describes the purpose of the button’s `action`. By default, a `Label` with localization key
-  /// `ly_img_editor_navigation_bar_button_toggle_pages_mode`, icon ``IMGLY/pages`` and page count, and style
-  /// ``IMGLY/adaptiveIconOnly`` is used.
+  /// `ly_img_editor_navigation_bar_button_toggle_pages_mode`, icon ``IMGLYCore/IMGLY/pages`` and page count, and style
+  /// ``IMGLYCore/IMGLY/adaptiveIconOnly`` is used.
   ///   - isEnabled: Whether the button is enabled. By default, it is only `true` if the editor is created.
   ///   - isVisible: Whether the button is visible.  By default, it is `true` if the scene contains a stack, `false`
   /// otherwise.

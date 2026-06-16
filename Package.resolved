@@ -1,13 +1,13 @@
 {
-  "originHash" : "b9d9e966dc9fdc2855b4258979e40b7a4943f1aac183b1dc412064f7ab2568a8",
+  "originHash" : "d58a6d50e065aafffd0fea3b6a28e3c46354fbf533fab77997fffb915905b7ed",
   "pins" : [
     {
       "identity" : "imglyengine-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/imgly/IMGLYEngine-swift.git",
       "state" : {
-        "revision" : "3f0f06003fe56007d26a2df1a3c836c9983c0b0b",
-        "version" : "1.69.0-rc.0"
+        "revision" : "b86c361fe018eab0a42250c4e695e44fde960419",
+        "version" : "1.77.0-rc.0"
       }
     },
     {

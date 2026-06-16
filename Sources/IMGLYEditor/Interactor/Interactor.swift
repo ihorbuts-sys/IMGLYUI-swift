@@ -62,12 +62,12 @@ import SwiftUI
   typealias RGBA = IMGLYEngine.RGBA
   typealias GradientColorStop = IMGLYEngine.GradientColorStop
   typealias Color = IMGLYEngine.Color
-  typealias DefaultAssetSource = Engine.DefaultAssetSource
   typealias BlurType = IMGLYEngine.BlurType
   typealias EffectType = IMGLYEngine.EffectType
   typealias Font = IMGLYEngine.Font
   typealias TextCase = IMGLYEngine.TextCase
   typealias DesignUnit = IMGLYEngine.DesignUnit
+  typealias FontUnit = IMGLYEngine.FontUnit
   typealias FillType = IMGLYEngine.FillType
 
   struct Selection: Equatable {
@@ -84,6 +84,7 @@ import SwiftUI
   @Published private(set) var textCursorPosition: CGPoint?
   @Published private(set) var canUndo = false
   @Published private(set) var canRedo = false
+  @Published private(set) var historyVersion = 0
   @Published private var isKeyboardPresented = false
   @Published private(set) var isDefaultZoomLevel = false
   @Published var isCameraSheetShown = false
@@ -92,12 +93,25 @@ import SwiftUI
 
   @Published var isLoopingPlaybackEnabled = true
   @Published var isSelectionVisible = true
+  @Published var isVoiceOverRecordModeActive = false
+  @Published var isVoiceOverRecordModeRecording = false
+  @Published var hasVoiceOverRecordModeRecordedAudio = false
+  @Published var isVoiceOverRecordModeMuteOtherAudio = true
+  @Published var voiceOverRecordModeElapsedDuration: TimeInterval = 0
+  @Published var voiceOverRecordModeTarget: BlockID?
 
   @Published var forceCropState: ForceCropState?
 
+  var voiceOverRecordModeDeletesTargetOnCancel = true
+  var voiceOverRecordModeSelectionToRestore: [BlockID] = []
+  var voiceOverRecordModeSelectionHidden = false
+  var ignoresNextVoiceOverSheetDismiss = false
+  var pendingVoiceOverRevealTarget: BlockID?
+  var voiceOverRecordCoordinator: VoiceOverRecordCoordinator?
+
   var uploadAssetSourceIDs: [MediaType: String] = EditorEvents.AddFrom.defaultAssetSourceIDs
-  var imageUploadAssetSourceID: String { uploadAssetSourceIDs[.image] ?? Engine.DemoAssetSource.imageUpload.rawValue }
-  var videoUploadAssetSourceID: String { uploadAssetSourceIDs[.movie] ?? Engine.DemoAssetSource.videoUpload.rawValue }
+  var imageUploadAssetSourceID: String { uploadAssetSourceIDs[.image] ?? "ly.img.image.upload" }
+  var videoUploadAssetSourceID: String { uploadAssetSourceIDs[.movie] ?? "ly.img.video.upload" }
 
   var isAddingCameraRecording = false
 
@@ -116,15 +130,7 @@ import SwiftUI
   }
 
   var isCanvasHitTestingEnabled: Bool {
-    !isPreviewMode
-  }
-
-  var sceneMode: SceneMode? {
-    // Make sure scene is loaded before calling `scene.getMode()` as it'll force unwrap the scene.
-    guard let engine, (try? engine.scene.get()) != nil else {
-      return nil
-    }
-    return try? engine.scene.getMode()
+    !isPreviewMode && !isVoiceOverRecordModeActive
   }
 
   var isCanvasActionEnabled: Bool {
@@ -138,7 +144,13 @@ import SwiftUI
   }
 
   var sheetContentForBottomBar: SheetContent? {
-    isPagesMode ? .pageOverview : sheetContentForSelection
+    if isPagesMode {
+      return .pageOverview
+    }
+    if isVoiceOverRecordModeActive {
+      return nil
+    }
+    return sheetContentForSelection
   }
 
   func sheetContent(_ id: BlockID?) -> SheetContent? {
@@ -201,19 +213,16 @@ import SwiftUI
 
   init(
     config: EngineConfiguration,
-    behavior: InteractorBehavior,
     dismiss: DismissAction,
-    assetLibrary: any AssetLibrary
+    assetLibrary: any AssetLibrary,
   ) {
     self.config = config
-    self.behavior = behavior
     self.dismiss = dismiss
     self.assetLibrary = assetLibrary
   }
 
-  init(config: EngineConfiguration, behavior: InteractorBehavior, assetLibrary: any AssetLibrary, sheet: SheetState?) {
+  init(config: EngineConfiguration, assetLibrary: any AssetLibrary, sheet: SheetState?) {
     self.config = config
-    self.behavior = behavior
     self.assetLibrary = assetLibrary
     if let sheet {
       _sheet = .init(initialValue: sheet)
@@ -229,6 +238,7 @@ import SwiftUI
     zoomLevelTask?.cancel()
     historyTask?.cancel()
     pageTask?.cancel()
+    clickedTask?.cancel()
     onLoadedTask?.cancel()
     blockTasks.forEach { $0.value.cancel() }
     blockTasks.removeAll()
@@ -241,6 +251,7 @@ import SwiftUI
     zoomLevelTask = observeZoomLevel()
     historyTask = observeHistory()
     pageTask = observePage()
+    clickedTask = observeClicked()
     onLoadedTask?.cancel()
     keyboardPublisher.assign(to: &$isKeyboardPresented)
   }
@@ -259,6 +270,7 @@ import SwiftUI
     zoomLevelTask?.cancel()
     historyTask?.cancel()
     pageTask?.cancel()
+    clickedTask?.cancel()
     onLoadedTask?.cancel()
     _engine = nil
     timelineProperties.timeline = nil
@@ -269,12 +281,17 @@ import SwiftUI
 
   // MARK: - Private properties
 
-  let behavior: InteractorBehavior
-
   // The optional _engine instance allows to control the deinitialization.
   private var _engine: Engine?
 
   private var previousEditMode: EditMode?
+
+  private var viewModeState: OnChanged.ViewModeState = .init(
+    editorViewMode: .edit,
+    pageIndex: 0,
+    insets: nil,
+    verticalSizeClass: nil,
+  )
 
   private var stateTask: Task<Void, Never>?
   private var eventTask: Task<Void, Never>?
@@ -284,6 +301,7 @@ import SwiftUI
   private var zoomLevelTask: Task<Void, Never>?
   private var historyTask: Task<Void, Never>?
   private var pageTask: Task<Void, Never>?
+  private var clickedTask: Task<Void, Never>?
   private var onLoadedTask: Task<Void, Never>?
   var blockTasks = [BlockID: Task<Void, Never>]()
 }
@@ -322,10 +340,21 @@ extension Interactor {
   func supportsBlendMode(_ id: BlockID?) -> Bool { block(id, engine?.block.supportsBlendMode) ?? false }
   func supportsBlur(_ id: BlockID?) -> Bool { block(id, engine?.block.supportsBlur) ?? false }
   func supportsCrop(_ id: BlockID?) -> Bool { block(id, engine?.block.supportsCrop) ?? false }
-  func canResetCrop(_ id: BlockID?) -> Bool { block(id, engine?.block.canResetCrop) ?? false }
+  func canRevertToOriginalRatio(_ id: BlockID?) -> Bool { block(id, engine?.block.canRevertToOriginalRatio) ?? false }
+  func canResetCrop(_ id: BlockID?, initialCropTranslationX: Float, initialCropTranslationY: Float) -> Bool {
+    block(id) { [self] in
+      try engine?.block.canResetCrop(
+        $0,
+        initialCropTranslationX: initialCropTranslationX,
+        initialCropTranslationY: initialCropTranslationY,
+      ) ?? false
+    } ?? false
+  }
+
   func isSolidFill(_ id: DesignBlockID?) -> Bool { isColorFillType(id, type: .solid) }
   func isGradientFill(_ id: DesignBlockID?) -> Bool { isColorFillType(id, type: .gradient) }
   func isColorFill(_ id: DesignBlockID?) -> Bool { isSolidFill(id) || isGradientFill(id) }
+  func isLineOrigin(_ id: BlockID?) -> Bool { block(id, engine?.block.isLineOrigin) ?? false }
   func isVisibleAtCurrentPlaybackTime(_ id: BlockID?) -> Bool {
     block(id, engine?.block.isVisibleAtCurrentPlaybackTime) ?? false
   }
@@ -334,47 +363,144 @@ extension Interactor {
 // MARK: - Property bindings
 
 extension Interactor {
-  /// Create a `TextState` binding for a block `id`.
-  /// If `resetFontProperties` is enabled bold and italic states would not be preserved on set.
-  func bindTextState(_ id: BlockID?, resetFontProperties: Bool, overrideScopes: Set<Scope> = []) -> Binding<TextState> {
-    bind(id, default: TextState()) { engine, block in
-      var text = TextState()
-      text.assetID = self.fontLibrary.assetFor(typefaceName: try engine.block.getTypeface(block).name)?.id
-      text.setFontProperties(try engine.block.getFontProperties(block))
-      return text
-    } setter: { engine, blocks, text, completion in
-      guard let assetID = text.assetID,
-            let typeface = self.fontLibrary.typefaceFor(id: assetID) else {
+  /// Binding for the selected font's asset id; applies the matching typeface to the blocks on set.
+  func bindFontAssetID(_ id: BlockID?, overrideScopes: Set<Scope> = []) -> Binding<String?> {
+    bind(id, default: nil as String?) { engine, block in
+      self.fontLibrary.assetFor(typefaceName: try engine.block.getTypeface(block).name)?.id
+    } setter: { engine, blocks, assetID, completion in
+      guard let assetID,
+            let typeface = self.fontLibrary.typefaceFor(id: assetID),
+            let font = typeface.previewFont else {
         return false
       }
-
-      func font(typeface: Typeface) -> IMGLYEngine.Font? {
-        if resetFontProperties {
-          typeface.previewFont
-        } else {
-          typeface.font(for: .init(bold: text.isBold, italic: text.isItalic)) ?? typeface.previewFont
+      let changed = try blocks.filter {
+        try engine.block.get($0, property: .key(.textFontFileURI)) != font.uri
+      }
+      try changed.forEach {
+        try engine.block.overrideAndRestore($0, scopes: overrideScopes) {
+          try engine.block.setTypeface($0, typeface: typeface)
         }
       }
-
-      if let font = font(typeface: typeface) {
-        let changed = try blocks.filter {
-          try engine.block.get($0, property: .key(.textFontFileURI)) != font.uri
-        }
-        try changed.forEach {
-          try engine.block.overrideAndRestore($0, scopes: overrideScopes) {
-            if resetFontProperties {
-              try engine.block.setTypeface($0, typeface: typeface)
-            } else {
-              try engine.block.setFont($0, fontFileURL: font.uri, typeface: typeface)
-            }
-          }
-        }
-        let didChange = !changed.isEmpty
-        return try (completion?(engine, blocks, didChange) ?? false) || didChange
-      } else {
-        return false
-      }
+      let didChange = !changed.isEmpty
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
     }
+  }
+
+  func bindBoldToggle(_ id: BlockID?) -> Binding<TextProperty?> {
+    let raw: Binding<TextProperty?> = bind(id, default: nil as TextProperty?) { engine, block -> TextProperty? in
+      let range = try engine.block.effectiveTextRange(block)
+      guard try engine.block.canToggleBoldFont(block, in: range) else { return nil }
+      return try engine.block.isBoldFont(block, in: range) ? .bold : .inactive
+    } setter: { engine, blocks, _, completion in
+      try blocks.forEach {
+        let range = try engine.block.effectiveTextRange($0)
+        try engine.block.toggleBoldFont($0, in: range)
+      }
+      let didChange = !blocks.isEmpty
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
+    }
+    return inactiveWrapped(raw)
+  }
+
+  func bindItalicToggle(_ id: BlockID?) -> Binding<TextProperty?> {
+    let raw: Binding<TextProperty?> = bind(id, default: nil as TextProperty?) { engine, block -> TextProperty? in
+      let range = try engine.block.effectiveTextRange(block)
+      guard try engine.block.canToggleItalicFont(block, in: range) else { return nil }
+      return try engine.block.isItalicFont(block, in: range) ? .italic : .inactive
+    } setter: { engine, blocks, _, completion in
+      try blocks.forEach {
+        let range = try engine.block.effectiveTextRange($0)
+        try engine.block.toggleItalicFont($0, in: range)
+      }
+      let didChange = !blocks.isEmpty
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
+    }
+    return inactiveWrapped(raw)
+  }
+
+  func bindUnderlineToggle(_ id: BlockID?) -> Binding<TextProperty?> {
+    bindDecorationToggle(id, property: .underline, line: .underline) { engine, block, range in
+      try engine.block.toggleTextDecorationUnderline(block, in: range)
+    }
+  }
+
+  func bindStrikethroughToggle(_ id: BlockID?) -> Binding<TextProperty?> {
+    bindDecorationToggle(id, property: .strikethrough, line: .strikethrough) { engine, block, range in
+      try engine.block.toggleTextDecorationStrikethrough(block, in: range)
+    }
+  }
+
+  func bindLetterCase(_ id: BlockID?) -> Binding<TextCase?> {
+    bind(id, default: nil as TextCase?) { engine, block -> TextCase? in
+      let range = try engine.block.effectiveTextRange(block)
+      return try engine.block.getTextCases(block, in: range).first ?? .normal
+    } setter: { engine, blocks, value, completion in
+      guard let value else { return false }
+      var didChange = false
+      for block in blocks {
+        let range = try engine.block.effectiveTextRange(block)
+        let isUniform = try engine.block.getTextCases(block, in: range).allSatisfy { $0 == value }
+        guard !isUniform else { continue }
+        try engine.block.setTextCase(block, textCase: value, in: range)
+        didChange = true
+      }
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
+    }
+  }
+
+  func bindListStyle(_ id: BlockID?) -> Binding<IMGLYEngine.ListStyle?> {
+    bind(id, default: nil as IMGLYEngine.ListStyle?) { engine, block -> IMGLYEngine.ListStyle? in
+      try engine.block.resolveTextListStyle(block)
+    } setter: { engine, blocks, value, completion in
+      guard let value else { return false }
+      let cursorRange = try engine.block.getTextCursorRange()
+      let changed = try blocks.filter { block in
+        let indices = try engine.block.getTextParagraphIndices(block, in: cursorRange)
+        guard !indices.isEmpty else { return false }
+        return try indices.contains {
+          try engine.block.getTextListStyle(block, paragraphIndex: $0) != value
+        }
+      }
+      try changed.forEach { block in
+        let indices = try engine.block.getTextParagraphIndices(block, in: cursorRange)
+        try indices.forEach { index in
+          try engine.block.setTextListStyle(block, listStyle: value, paragraphIndex: index)
+        }
+      }
+      let didChange = !changed.isEmpty
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
+    }
+  }
+
+  private func bindDecorationToggle(
+    _ id: BlockID?,
+    property: TextProperty,
+    line: TextDecorationLine,
+    toggle: @escaping @MainActor (Engine, DesignBlockID, Range<String.Index>) throws -> Void,
+  ) -> Binding<TextProperty?> {
+    let raw: Binding<TextProperty?> = bind(id, default: nil as TextProperty?) { engine, block -> TextProperty? in
+      let range = try engine.block.effectiveTextRange(block)
+      let decorations = try engine.block.getTextDecorations(block, in: range)
+      let allDecorated = !decorations.isEmpty && decorations.allSatisfy { $0.line.contains(line) }
+      return allDecorated ? property : .inactive
+    } setter: { engine, blocks, _, completion in
+      try blocks.forEach {
+        let range = try engine.block.effectiveTextRange($0)
+        try toggle(engine, $0, range)
+      }
+      let didChange = !blocks.isEmpty
+      return try (completion?(engine, blocks, didChange) ?? false) || didChange
+    }
+    return inactiveWrapped(raw)
+  }
+
+  /// Wraps a toggle binding so ``GenericPropertyButton`` deselecting to `nil` re-applies `.inactive`,
+  /// which fires the setter (a plain `nil` would otherwise be a no-op).
+  private func inactiveWrapped(_ raw: Binding<TextProperty?>) -> Binding<TextProperty?> {
+    Binding<TextProperty?>(
+      get: { raw.wrappedValue },
+      set: { raw.wrappedValue = $0 ?? .inactive },
+    )
   }
 
   // swiftlint:disable cyclomatic_complexity
@@ -753,7 +879,7 @@ extension Interactor: AssetLibraryInteractor {
           // If replacing GIFs/looping videos with non-looping videos
           // we need to set the properties for the fill based on the new\
           // asset. This will be part of the engine later.
-          if sceneMode == .video, try engine.block.supportsFill(id) {
+          if try engine.block.supportsFill(id) {
             let fillID = try engine.block.getFill(id)
             if try engine.block.supportsPlaybackControl(fillID) {
               if let looping = asset.looping {
@@ -813,101 +939,90 @@ extension Interactor: AssetLibraryInteractor {
           let addToBackgroundTrack = sheet.content == .clip
 
           if let id = try await engine.asset.apply(sourceID: sourceID, assetResult: asset) {
-            let pageID = try engine.getPage(page)
+            guard let pageID = try engine.scene.getCurrentPage() else { return }
 
-            switch sceneMode {
-            case .design:
+            let minClipDuration: TimeInterval = 1
+            let fallbackClipDuration: TimeInterval = 5
+            var resolvedDuration = asset.duration ?? fallbackClipDuration
+
+            if addToBackgroundTrack {
+              createBackgroundTrackIfNeeded()
+              guard let backgroundTrack = timelineProperties.backgroundTrack else {
+                handleError(
+                  Error(errorDescription: "No Background Track."),
+                )
+                return
+              }
+              // Append to background track and configure
+              try engine.block.appendChild(to: backgroundTrack, child: id)
+              try engine.block.fillParent(id)
+
+              // Make sure to put the playhead on the added track and not slightly before it due to floating-point
+              // precision issues.
+              let epsilon = 0.0001
+              try engine.block.setPlaybackTime(pageID, time: engine.block.getTimeOffset(id) + epsilon)
+            } else {
+              // Append to page
               try engine.block.appendChild(to: pageID, child: id)
               try updateCamera(id)
-            case .video:
-              // This is a video scene, so we need to take care of offsets and durations
-              let minClipDuration: TimeInterval = 1
-              let fallbackClipDuration: TimeInterval = 5
 
-              var resolvedDuration = asset.duration ?? fallbackClipDuration
+              // Set time properties — harmless for design blocks (properties stored but not used)
+              let playbackTime = try engine.block.getPlaybackTime(pageID)
+              let totalDuration = try engine.block.getDuration(pageID)
 
-              if addToBackgroundTrack {
-                createBackgroundTrackIfNeeded()
-                guard let backgroundTrack = timelineProperties.backgroundTrack else {
-                  handleError(
-                    Error(errorDescription: "No Background Track."),
-                  )
-                  return
-                }
-                // Append to background track and configure
-                try engine.block.appendChild(to: backgroundTrack, child: id)
-                try engine.block.fillParent(id)
+              // Prevent inserting at the very end of the timeline
+              var clampedOffset = max(0, min(playbackTime, totalDuration - minClipDuration))
 
-                // Make sure to put the playhead on the added track and not slightly before it due to floating-point
-                // precision issues.
-                let epsilon = 0.0001
-                try engine.block.setPlaybackTime(pageID, time: engine.block.getTimeOffset(id) + epsilon)
-              } else {
-                // Append to page
-                try engine.block.appendChild(to: pageID, child: id)
-
-                // Determine where at which point in time to insert the clip
-                let playbackTime = try engine.block.getPlaybackTime(pageID)
-                let totalDuration = try engine.block.getDuration(pageID)
-
-                // Prevent inserting at the very end of the timeline
-                var clampedOffset = max(0, min(playbackTime, totalDuration - minClipDuration))
-
-                if let blockType = try? engine.block.getType(id),
-                   blockType == BlockType.audio.rawValue {
-                  // Always insert audio at the beginning
-                  clampedOffset = 0
-                }
-
-                // Set the time offset
-                try engine.block.setTimeOffset(id, offset: clampedOffset)
-
-                // If there is nothing in the scene yet, we allow the full asset duration,
-                // otherwise shorten to fit remaining time:
-                let maxClipDuration = totalDuration - clampedOffset
-                let assetDuration = asset.duration ?? max(fallbackClipDuration, maxClipDuration)
-                resolvedDuration = totalDuration == 0 ? assetDuration : min(assetDuration, maxClipDuration)
+              if let blockType = try? engine.block.getType(id),
+                 blockType == BlockType.audio.rawValue {
+                // Always insert audio at the beginning
+                clampedOffset = 0
               }
 
-              try engine.block.setDuration(id, duration: resolvedDuration)
+              // Set the time offset
+              try engine.block.setTimeOffset(id, offset: clampedOffset)
 
-              // In the future, this may be set by the default implementation.
-              if let artist = asset.artist,
-                 let title = asset.title {
-                try engine.block.setMetadata(id, key: "name", value: "\(artist) · \(title)")
-              } else if let label = asset.label {
-                try engine.block.setMetadata(id, key: "name", value: label)
-              }
+              // If there is nothing in the scene yet, we allow the full asset duration,
+              // otherwise shorten to fit remaining time:
+              let maxClipDuration = totalDuration - clampedOffset
+              let assetDuration = asset.duration ?? max(fallbackClipDuration, maxClipDuration)
+              resolvedDuration = totalDuration == 0 ? assetDuration : min(assetDuration, maxClipDuration)
+            }
 
-              if try engine.block.supportsFill(id) {
-                let fillID = try engine.block.getFill(id)
-                let fillType = try engine.block.getType(fillID)
-                if fillType == FillType.video.rawValue {
-                  // Wait for the video data to load
-                  try await engine.block.forceLoadAVResource(fillID)
+            try engine.block.setDuration(id, duration: resolvedDuration)
 
-                  let footageDuration = try engine.block.getAVResourceTotalDuration(fillID)
-                  if addToBackgroundTrack {
-                    try engine.block.setDuration(id, duration: footageDuration)
-                  } else {
-                    try engine.block.setDuration(id, duration: min(resolvedDuration, footageDuration))
-                  }
+            // In the future, this may be set by the default implementation.
+            if let artist = asset.artist,
+               let title = asset.title {
+              try engine.block.setMetadata(id, key: "name", value: "\(artist) · \(title)")
+            } else if let label = asset.label {
+              try engine.block.setMetadata(id, key: "name", value: label)
+            }
+
+            if try engine.block.supportsFill(id) {
+              let fillID = try engine.block.getFill(id)
+              let fillType = try engine.block.getType(fillID)
+              if fillType == FillType.video.rawValue {
+                // Wait for the video data to load
+                try await engine.block.forceLoadAVResource(fillID)
+
+                let footageDuration = try engine.block.getAVResourceTotalDuration(fillID)
+                if addToBackgroundTrack {
+                  try engine.block.setDuration(id, duration: footageDuration)
+                } else {
+                  try engine.block.setDuration(id, duration: min(resolvedDuration, footageDuration))
                 }
-              } else if try engine.block.getType(id) == BlockType.audio.rawValue {
-                // Prevent audio blocks from being considered in the z-index reordering
-                try engine.block.setAlwaysOnTop(id, enabled: true)
-
-                // Wait for the audio data to load
-                try await engine.block.forceLoadAVResource(id)
-
-                let footageDuration = try engine.block.getAVResourceTotalDuration(id)
-                try engine.block.setDuration(id, duration: min(resolvedDuration, footageDuration))
-                try engine.block.setLooping(id, looping: false)
               }
-            case .none:
-              assertionFailure("Unknown scene mode.")
-            @unknown default:
-              assertionFailure("Unknown scene mode.")
+            } else if try engine.block.getType(id) == BlockType.audio.rawValue {
+              // Prevent audio blocks from being considered in the z-index reordering
+              try engine.block.setAlwaysOnTop(id, enabled: true)
+
+              // Wait for the audio data to load
+              try await engine.block.forceLoadAVResource(id)
+
+              let footageDuration = try engine.block.getAVResourceTotalDuration(id)
+              try engine.block.setDuration(id, duration: min(resolvedDuration, footageDuration))
+              try engine.block.setLooping(id, looping: false)
             }
 
             if ProcessInfo.isUITesting {
@@ -958,6 +1073,9 @@ extension Interactor: AssetLibraryInteractor {
 
 extension Interactor {
   func applyResizeAsset(sourceID: String, asset: AssetResult, to id: DesignBlockID?) {
+    if asset.payload?.transformPreset == .contentAspectRatio, !canRevertToOriginalRatio(id) {
+      return
+    }
     func resizePages() async throws {
       let pages = try engine?.getSortedPages()
       let scene = try engine?.scene.get()
@@ -997,6 +1115,9 @@ extension Interactor {
         } else {
           try await resizePages()
         }
+        // Wait for the pending zoom Task to finish before committing the undo step so the snapshot captures the
+        // post-resize camera position (otherwise undo/redo of fixedSize presets restores a stale camera).
+        await zoom.task?.value
         try engine?.editor.addUndoStep()
       } catch {
         handleError(error)
@@ -1004,7 +1125,14 @@ extension Interactor {
     }
   }
 
-  func resizePages(width: CGFloat, height: CGFloat, designUnit: DesignUnit, dpi: CGFloat, pixelScale: CGFloat) throws {
+  func resizePages(
+    width: CGFloat,
+    height: CGFloat,
+    designUnit: DesignUnit,
+    fontUnit: FontUnit? = nil,
+    dpi: CGFloat,
+    pixelScale: CGFloat,
+  ) throws {
     guard let pages = try engine?.getSortedPages(), let scene = try engine?.scene.get() else { return }
     // Temporarily disable camera clamping as otherwise the page carousel breaks
     // while resizing as we cannot batch update the sizes for all pages.
@@ -1013,6 +1141,9 @@ extension Interactor {
     try disableCameraClamping()
 
     try engine?.scene.setDesignUnit(designUnit)
+    if let fontUnit {
+      try engine?.scene.setFontSizeUnit(fontUnit)
+    }
     try engine?.block.setFloat(scene, property: "scene/pixelScaleFactor", value: Float(pixelScale))
     try engine?.block.setFloat(scene, property: "scene/dpi", value: Float(dpi))
     try engine?.block.setFloat(scene, property: "scene/pageDimensions/width", value: Float(width))
@@ -1069,6 +1200,12 @@ extension Interactor {
   }
 
   func bottomBarCloseButtonTapped() {
+    if isVoiceOverRecordModeActive {
+      Task { [weak self] in
+        await self?.cancelVoiceOverRecordMode()
+      }
+      return
+    }
     do {
       try engine?.block.deselectAll()
     } catch {
@@ -1167,12 +1304,29 @@ extension Interactor {
 
     sceneTask = Task {
       do {
-        let engine = try await Engine(license: config.settings.license, userID: config.settings.userID)
+        let engine = try await Engine(
+          license: config.settings.license,
+          userID: config.settings.userID,
+          buildHost: config.settings.host,
+        )
         _engine = engine
         onAppear()
 
-        try await behavior.loadScene(.init(engine, self), with: insets)
-        try await fontLibrary.loadFromAssetSource(engine: engine, sourceID: Engine.DefaultAssetSource.typeface.rawValue)
+        try engine.editor.setSettingString(
+          "basePath",
+          value: config.settings.baseURL.absoluteString,
+        )
+
+        try await config.callbacks.onCreate(engine)
+
+        try await performPostOnCreateSetup(engine)
+
+        if engine.asset.findAllSources().contains("ly.img.typeface") {
+          try await fontLibrary.loadFromAssetSource(
+            engine: engine,
+            sourceID: "ly.img.typeface",
+          )
+        }
 
         try configureTimeline()
         self.zoomLevelChanged(forceUpdate: true)
@@ -1182,6 +1336,28 @@ extension Interactor {
       } catch {
         config.callbacks.onError(error, self)
       }
+    }
+  }
+
+  private func performPostOnCreateSetup(_ engine: Engine) async throws {
+    if !(try engine.editor.getSettingBool("features/pageCarouselEnabled")) {
+      try engine.showPage(page)
+    }
+
+    selectionColors = try engine.selectionColors(
+      forPage: 0,
+      includeDisabled: true,
+      setDisabled: true,
+      ignoreScope: true,
+    )
+
+    let zoomLevel = try await engine.zoomToPage(
+      page,
+      zoomModel.defaultInsets,
+      zoomModel: zoomModel,
+    )
+    if let zoomLevel {
+      zoomModel.defaultZoomLevel = zoomLevel
     }
   }
 
@@ -1199,12 +1375,24 @@ extension Interactor {
         try await Task.sleep(for: .milliseconds(100))
 
         if let engine {
-          try await config.callbacks.onLoaded(.init(engine: engine, eventHandler: self, assetLibrary: assetLibrary))
+          let taskCollector = OnLoaded.TaskCollector()
+          try await config.callbacks.onLoaded(.init(
+            engine: engine,
+            eventHandler: self,
+            assetLibrary: assetLibrary,
+            taskCollector: taskCollector,
+          ))
+
+          // Start all tasks registered via context.task(_:).
+          // They run until onLoadedTask is cancelled.
+          try await taskCollector.runAll()
         } else {
           throw Error(errorDescription: "Engine not initialized. Failed to execute `.imgly.onLoaded` callback.")
         }
       } catch {
-        handleError(error)
+        if !Task.isCancelled {
+          handleError(error)
+        }
       }
     }
   }
@@ -1212,13 +1400,6 @@ extension Interactor {
   func cancelExport() {
     exportCanceled = true
     exportTask?.cancel()
-  }
-
-  private func getContext(_ action: (@MainActor (_ context: InteractorContext) throws -> Void)?) rethrows {
-    guard let engine else {
-      return
-    }
-    try action?(.init(engine, self))
   }
 
   // MARK: - Zoom
@@ -1304,7 +1485,11 @@ extension Interactor {
       do {
         if !isPreviewMode {
           if sheet.isFloating, sheet.isPresented { return }
-          let zoomLevel: Float? = if zoomToPage {
+          // Re-check edit mode at execution time - if we're in text mode now, never zoom to page
+          // even if it was requested earlier. This handles race conditions where the edit mode
+          // changes between when the task was created and when it executes.
+          let effectiveZoomToPage = zoomToPage && editMode != .text
+          let zoomLevel: Float? = if effectiveZoomToPage {
             try await engine?.zoomToPage(page, insets, zoomModel: zoomModel)
           } else {
             try await engine?.updateZoom(
@@ -1323,7 +1508,17 @@ extension Interactor {
           }
         } else {
           guard let engine else { return }
-          try await behavior.enablePreviewMode(.init(engine, self), insets)
+          let newViewModeState = OnChanged.ViewModeState(
+            editorViewMode: .preview,
+            pageIndex: page,
+            insets: insets,
+            verticalSizeClass: verticalSizeClass,
+          )
+          try config.callbacks.onChanged(
+            .viewMode(oldValue: viewModeState, newValue: newViewModeState),
+            .init(engine: engine, eventHandler: self),
+          )
+          viewModeState = newViewModeState
         }
         if isCreating {
           // Wait a moment to be sure that the engine rendered the first intended frame after initial zooming before
@@ -1490,8 +1685,19 @@ extension Interactor {
   }
 
   func enableEditMode() throws {
+    guard let engine else { return }
     if viewMode == .preview {
-      try getContext(behavior.enableEditMode)
+      let newViewModeState = OnChanged.ViewModeState(
+        editorViewMode: .edit,
+        pageIndex: page,
+        insets: nil,
+        verticalSizeClass: verticalSizeClass,
+      )
+      try config.callbacks.onChanged(
+        .viewMode(oldValue: viewModeState, newValue: newViewModeState),
+        .init(engine: engine, eventHandler: self),
+      )
+      viewModeState = newViewModeState
     }
     viewMode = .edit
     sheet.isPresented = false
@@ -1528,38 +1734,48 @@ extension Interactor {
     handleErrorAndDismiss(error, onDismiss)
   }
 
-    func checkDurationBeforeExport() {
-      pause()
-      let lastTask = exportTask
-      lastTask?.cancel()
-      isExporting = true
-      exportTask = Task(priority: .userInitiated) {
-        _ = await lastTask?.result
-        if Task.isCancelled {
-          return
-        }
-
-        guard let engine else {
-          return
-        }
-
-        do {
-          try await config.callbacks.onCheck(engine, self)
-        } catch is CancellationError {
-          hideExportSheet()
-        } catch {
-          if export.isPresented {
-            showExportSheet(.error(error) { [weak self] in
-              self?.hideExportSheet()
-            })
-          } else {
-            handleError(error)
-          }
-        }
-
-        isExporting = false
+  func checkDurationBeforeExport() {
+    pause()
+    let lastTask = exportTask
+    lastTask?.cancel()
+    isExporting = true
+    exportTask = Task(priority: .userInitiated) {
+      _ = await lastTask?.result
+      if Task.isCancelled {
+        return
       }
+
+      guard let engine else {
+        return
+      }
+
+      do {
+        try await config.callbacks.onCheck(engine, self)
+      } catch is CancellationError {
+        hideExportSheet()
+      } catch {
+        if export.isPresented {
+          showExportSheet(.error(error) { [weak self] in
+            self?.hideExportSheet()
+          })
+        } else {
+          handleError(error)
+        }
+      }
+
+      isExporting = false
     }
+  }
+
+  func showVideoMinLengthAlert(minimumDuration: TimeInterval) {
+    let durationString = CMTime(seconds: minimumDuration).imgly.formattedDurationStringForClip()
+    let title = String(localized: .imgly.localized("ly_img_editor_dialog_video_min_length_title"))
+    let message = String(
+      localized: .imgly.localized("ly_img_editor_dialog_video_min_length_text \(durationString)"),
+    )
+    let buttonTitle = String(localized: .imgly.localized("ly_img_editor_dialog_video_min_length_button"))
+    error = AlertState(title, message: message, dismiss: false, dismissTitle: buttonTitle)
+  }
 
   func exportScene() {
     pause()
@@ -1656,10 +1872,21 @@ extension Interactor {
       let showsPlaceholderButton = try engine.block.isPlaceholderControlsButtonEnabled(block)
       let showsPlaceholderOverlay = try engine.block.isPlaceholderControlsOverlayEnabled(block)
 
-      if isPlaceholder, showsPlaceholderButton || showsPlaceholderOverlay {
-        return content
-      } else {
+      guard isPlaceholder, showsPlaceholderButton || showsPlaceholderOverlay else {
         return nil
+      }
+      // A page holds its replaceable media in its fill, not the block type, so for a page
+      // placeholder resolve the library from the fill type (mirrors the graphic case in
+      // `sheetContent(for:with:and:)`). Non-media fills (color/gradient) have nothing to
+      // replace, so no sheet opens.
+      guard case .page = content else {
+        return content
+      }
+      let fill = try engine.block.getFill(block)
+      switch try engine.block.getType(fill) {
+      case FillType.image.rawValue: return .image
+      case FillType.video.rawValue: return .video
+      default: return nil
       }
     } catch {
       handleError(error)
@@ -1704,11 +1931,14 @@ extension Interactor {
       self.selection = selection
     }
 
-    if sceneMode == .video,
-       let currentPage = timelineProperties.currentPage {
-      let isSelectionVisible = isVisibleAtCurrentPlaybackTime(selection?.blocks.first)
-      if self.isSelectionVisible != isSelectionVisible {
-        self.isSelectionVisible = isSelectionVisible
+    if let currentPage = timelineProperties.currentPage {
+      let isSelectionVisibleAtPlayhead = isVisibleAtCurrentPlaybackTime(selection?.blocks.first)
+      let resolvedSelectionVisibility =
+        (isVoiceOverRecordModeActive && voiceOverRecordModeSelectionHidden)
+          ? false
+          : isSelectionVisibleAtPlayhead
+      if isSelectionVisible != resolvedSelectionVisibility {
+        isSelectionVisible = resolvedSelectionVisibility
       }
       do {
         let isLoopingPlaybackEnabled = try engine.block.isLooping(currentPage)
@@ -1745,6 +1975,31 @@ extension Interactor {
     }
   }
 
+  func observeClicked() -> Task<Void, Never> {
+    Task {
+      guard let engine else {
+        return
+      }
+      for await _ in engine.block.onClicked {
+        openPlaceholderSheetIfNeeded()
+      }
+    }
+  }
+
+  private func openPlaceholderSheetIfNeeded() {
+    guard let content = placeholderContent(for: selection) else { return }
+
+    let replaceSheet = SheetState(.libraryReplace {
+      AssetLibrarySheet(content: content)
+    }, content)
+
+    if sheet.isPresented, !sheet.isReplacing, sheet.content != content {
+      nextSheet = replaceSheet
+    } else {
+      sheet = replaceSheet
+    }
+  }
+
   func observeZoomLevel() -> Task<Void, Never> {
     Task {
       guard let engine else {
@@ -1761,7 +2016,7 @@ extension Interactor {
       guard let engine else {
         return
       }
-      for await _ in engine.editor.onHistoryUpdated {
+      for await _ in engine.editor.onHistoryUpdatedWithKind {
         historyChanged()
         DispatchQueue.main.async { [weak self] in
           self?.refreshThumbnails()
@@ -1777,7 +2032,9 @@ extension Interactor {
       }
       for await page in engine.scene.onCarouselPageChanged {
         let pageIndex = try? engine.getPageIndex(page)
-        if !isCreating, !isPagesMode, let pageIndex, pageIndex != self.page {
+        // Ignore carousel events while the Resize sheet is open — would dismiss the sheet via pageChanged().
+        let isPageResize = sheet.isPresented && sheet.type is SheetTypes.Resize
+        if !isCreating, !isPagesMode, !isPageResize, let pageIndex, pageIndex != self.page {
           self.page = pageIndex
         }
       }
@@ -1857,6 +2114,33 @@ extension Interactor {
     if !sheet.isPresented, oldValue.isPresented, oldValue.associatedEditMode == .crop {
       setEditMode(.transform)
     }
+    if !sheet.isPresented,
+       oldValue.isPresented,
+       (try? engine?.editor.getSettingBool("softwareKeyboardSuspended")) == true {
+      // A sheet that suspended the keyboard closed; clear the flag so the IME can resume.
+      try? engine?.editor.setSettingBool("softwareKeyboardSuspended", value: false)
+    }
+    if !sheet.isPresented,
+       oldValue.isPresented,
+       oldValue.type is SheetTypes.Voiceover {
+      if ignoresNextVoiceOverSheetDismiss {
+        ignoresNextVoiceOverSheetDismiss = false
+        if let target = pendingVoiceOverRevealTarget {
+          pendingVoiceOverRevealTarget = nil
+          DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard engine?.block.isValid(target) == true else { return }
+
+            timelineProperties.requestScroll(to: target)
+            select(id: target)
+          }
+        }
+      } else if isVoiceOverRecordModeActive {
+        Task { [weak self] in
+          await self?.cancelVoiceOverRecordMode()
+        }
+      }
+    }
   }
 
   func selectionChanged(_ oldValue: Selection?) {
@@ -1867,30 +2151,26 @@ extension Interactor {
       updateZoom(clampOnly: true)
     }
 
-    let wasPresented = sheet.isPresented
-
     if sheet.isPresented {
-      if !(sheet.type is SheetTypes.LibraryAdd),
-         oldValue?.blocks != selection?.blocks {
-        sheet.isPresented = false
-      }
-      if sheet.type is SheetTypes.LibraryAdd, selection != nil {
-        sheet.isPresented = false
-      }
-    }
-    if oldValue?.blocks != selection?.blocks,
-       let content = placeholderContent(for: selection) {
-      let replaceSheet = SheetState(.libraryReplace {
-        AssetLibrarySheet(content: content)
-      }, content)
-
-      if wasPresented, !sheet.isReplacing, sheet.content != content {
-        nextSheet = replaceSheet
+      let isVoiceOverRecordSheet = sheet.type is SheetTypes.Voiceover && isVoiceOverRecordModeActive
+      if isVoiceOverRecordSheet {
+        let isTargetSelection = voiceOverRecordModeTarget.map { selection?.blocks == [$0] } ?? false
+        if !isTargetSelection, oldValue?.blocks != selection?.blocks {
+          sheet.isPresented = false
+        }
       } else {
-        sheet = replaceSheet
+        if !(sheet.type is SheetTypes.LibraryAdd),
+           // Don't close a replace sheet when the new selection is also a placeholder —
+           // onClicked will update its content in place for a seamless transition.
+           !(sheet.isReplacing && placeholderContent(for: selection) != nil),
+           oldValue?.blocks != selection?.blocks {
+          sheet.isPresented = false
+        }
+        if sheet.type is SheetTypes.LibraryAdd, selection != nil {
+          sheet.isPresented = false
+        }
       }
     }
-
     updateTimelineSelectionFromCanvas()
   }
 
@@ -1947,10 +2227,16 @@ extension Interactor {
   func historyChanged() {
     guard let engine else { return }
 
+    let isPageResize = sheet.isPresented && sheet.type is SheetTypes.Resize
     do {
       // If in page crop/resize mode, zoom to page again.
-      if editMode == .crop, let selection = selection?.blocks.first, let type = try? engine.block.getType(selection),
-         type != DesignBlockType.graphic.rawValue {
+      let isPageCrop: Bool = {
+        guard editMode == .crop,
+              let blockID = selection?.blocks.first,
+              let type = try? engine.block.getType(blockID) else { return false }
+        return type != DesignBlockType.graphic.rawValue
+      }()
+      if isPageCrop || isPageResize {
         updateZoom(for: .pageSizeChanged, with: (zoomModel.defaultInsets, zoomModel.canvasHeight, zoomModel.padding))
       }
       if isPagesMode {
@@ -1968,7 +2254,8 @@ extension Interactor {
         page = pageIndex
       }
     } else {
-      if isResizingPages {
+      // Mirrors isResizingPages: suppress page-index sync while the Resize sheet is open.
+      if isResizingPages || isPageResize {
         isResizingPages = false
       } else {
         let pageIndex = try? engine.getCurrentPageIndex()
@@ -1981,17 +2268,19 @@ extension Interactor {
     self.canUndo = canUndo // Keep this as it is used to trigger UI updates
     let canRedo = (try? engine.editor.canRedo()) ?? false
     self.canRedo = canRedo // Keep this as it is used to trigger UI updates
+    historyVersion &+= 1
   }
 
-  func openImagePicker(_ assetSourceIDs: [MediaType: String]) {
+  func openImagePicker(_ assetSourceIDs: [MediaType: String], addToBackgroundTrack: Bool = false) {
     pause()
     uploadAssetSourceIDs = assetSourceIDs
     isImagePickerShown = true
-    sheet.content = .clip // Set to clip to add to background track
+    sheet.content = addToBackgroundTrack ? .clip : .image
   }
 
-  func openPhotoRoll() {
+  func openPhotoRoll(addToBackgroundTrack: Bool = false) {
     pause()
+    let content: SheetContent = addToBackgroundTrack ? .clip : .image
     if isPhotoRollFullLibraryAccessEnabled {
       Task { @MainActor in
         if PhotoLibraryAuthorizationManager.shared.authorizationStatus == .notDetermined {
@@ -2001,8 +2290,7 @@ extension Interactor {
           try engine?.block.deselectAll()
           // Ensure that the deselect event comes before opening the sheet, otherwise the sheet closes immediately.
           try await Task.sleep(for: .milliseconds(100))
-          let content = SheetContent.clip
-          sheet = .init(.libraryAdd { DefaultAssetLibrary.photoRollTab }, content)
+          sheet = .init(.libraryAdd { self.assetLibrary.photoRollTab }, content)
         } catch {
           handleError(error)
         }
@@ -2014,7 +2302,7 @@ extension Interactor {
         .movie: PhotoRollAssetSource.id,
       ]
       isImagePickerShown = true
-      sheet.content = .clip // Set to clip to add to background track
+      sheet.content = content
     }
   }
 }
@@ -2043,8 +2331,8 @@ extension PageOverviewState {
             block: $0,
             width: CGFloat(try engine.block.getFrameWidth($0)),
             height: CGFloat(try engine.block.getFrameHeight($0)),
-            // When engine exposes the page(s) changed for `onHistoryUpdated` we can selectively refresh pages instead
-            // of all.
+            // When engine exposes the page(s) changed for `onHistoryUpdatedWithKind` we can selectively refresh pages
+            // instead of all.
             refresh: UUID())
     }
   }
@@ -2089,5 +2377,11 @@ extension PageOverviewState {
       return nil
     }
     return getPage(currentPageIndex - 1)
+  }
+}
+
+extension Interactor: VideoDurationConstraintsProviding {
+  var videoDurationConstraints: VideoDurationConstraints {
+    timelineProperties.videoDurationConstraints
   }
 }

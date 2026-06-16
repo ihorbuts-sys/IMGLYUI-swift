@@ -46,6 +46,17 @@ public extension EditorEvents {
     let insets: CGFloat
   }
 
+  /// An event for setting minimum and maximum video duration constraints.
+  struct SetVideoDurationConstraints: EditorEvent {
+    let minimumVideoDuration: TimeInterval?
+    let maximumVideoDuration: TimeInterval?
+  }
+
+  /// An event for showing an alert when the video is below the minimum duration.
+  struct ShowVideoMinLengthAlert: EditorEvent {
+    let minimumVideoDuration: TimeInterval
+  }
+
   /// A namespace for ``EditorEvent``s related to export.
   enum Export {}
 }
@@ -133,8 +144,33 @@ public extension EditorEvent where Self == EditorEvents.Export.CheckDurationLimi
   static var checkDurationLimitations: Self { Self() }
 }
 
+public extension EditorEvent where Self == EditorEvents.SetVideoDurationConstraints {
+  /// Creates an ``EditorEvent`` to set minimum and maximum video duration constraints.
+  /// - Parameters:
+  ///   - minimumVideoDuration: The minimum duration in seconds. Set to `nil` to disable.
+  ///   - maximumVideoDuration: The maximum duration in seconds. Set to `nil` to disable.
+  /// - Returns: The created ``EditorEvents/SetVideoDurationConstraints`` event.
+  static func setVideoDurationConstraints(
+    minimumVideoDuration: TimeInterval?,
+    maximumVideoDuration: TimeInterval?,
+  ) -> Self {
+    Self(minimumVideoDuration: minimumVideoDuration, maximumVideoDuration: maximumVideoDuration)
+  }
+}
+
+public extension EditorEvent where Self == EditorEvents.ShowVideoMinLengthAlert {
+  /// Creates an ``EditorEvent`` to show an alert when the video is below the minimum duration.
+  /// - Parameter minimumVideoDuration: The minimum duration in seconds.
+  /// - Returns: The created ``EditorEvents/ShowVideoMinLengthAlert`` event.
+  static func showVideoMinLengthAlert(minimumVideoDuration: TimeInterval) -> Self {
+    Self(minimumVideoDuration: minimumVideoDuration)
+  }
+}
+
 public extension EditorEvent where Self == EditorEvents.Export.Start {
-  /// Creates an ``EditorEvent`` to start the export process. This event triggers the ``IMGLY/onExport(_:)`` callback.
+  /// Creates an ``EditorEvent`` to start the export process. This event triggers the
+  /// ``EditorConfiguration/Builder/onExport(_:)``
+  /// callback.
   static var startExport: Self { Self() }
 }
 
@@ -203,17 +239,20 @@ public extension EditorEvents.Selection {
 }
 
 public extension EditorEvents.AddFrom {
-  /// Default asset source IDs for adding assets based on the asset's ``MediaType``.
+  /// Default asset source IDs for adding assets based on the asset's ``IMGLYCoreUI/MediaType``.
   static var defaultAssetSourceIDs: [MediaType: String] { [
-    .image: Engine.DemoAssetSource.imageUpload.rawValue,
-    .movie: Engine.DemoAssetSource.videoUpload.rawValue,
+    .image: "ly.img.image.upload",
+    .movie: "ly.img.video.upload",
   ] }
 
   /// An event for adding assets from the photo roll.
-  /// The behavior depends on the mode passed to ``PhotoRollAssetSource``:
+  /// The behavior depends on the mode passed to ``IMGLYCore/PhotoRollAssetSource``:
   /// - `photosPicker` (default): Opens system photos picker (no permissions required)
   /// - `fullLibraryAccess`: Opens full photo library (requires permissions)
-  struct PhotoRoll: EditorEvent {}
+  struct PhotoRoll: EditorEvent {
+    /// Whether to add the asset to the background track.
+    let addToBackgroundTrack: Bool
+  }
 
   /// An event for adding assets from the system photo roll.
   @available(*, deprecated, message: """
@@ -222,6 +261,8 @@ public extension EditorEvents.AddFrom {
   """)
   struct SystemPhotoRoll: EditorEvent {
     let assetSourceIDs: [MediaType: String]
+    /// Whether to add the asset to the background track.
+    let addToBackgroundTrack: Bool
   }
 
   /// An event for adding assets from the photo roll library sheet.
@@ -234,6 +275,8 @@ public extension EditorEvents.AddFrom {
   /// An event for adding assets from the system camera.
   struct SystemCamera: EditorEvent {
     let assetSourceIDs: [MediaType: String]
+    /// Whether to add the asset to the background track.
+    let addToBackgroundTrack: Bool
   }
 
   /// An event for adding assets from the IMGLY camera.
@@ -332,18 +375,27 @@ public extension EditorEvent where Self == EditorEvents.Selection.SendBackward {
 public extension EditorEvent where Self == EditorEvents.AddFrom.PhotoRoll {
   /// Creates an ``EditorEvent`` to add assets from the photo roll.
   ///
-  /// The behavior depends on the mode passed to ``PhotoRollAssetSource``:
+  /// The behavior depends on the mode passed to ``IMGLYCore/PhotoRollAssetSource``:
   /// - `photosPicker` (default): Opens system photos picker (no permissions required)
   /// - `fullLibraryAccess`: Opens full photo library (requires permissions)
   ///
+  /// - Parameters:
+  ///   - addToBackgroundTrack: Whether to add the asset to the background track. Defaults to `false`.
   /// - Returns: The created ``EditorEvents/AddFrom/PhotoRoll`` event.
-  static var addFromPhotoRoll: Self { Self() }
+  static func addFromPhotoRoll(addToBackgroundTrack: Bool = false) -> Self {
+    Self(addToBackgroundTrack: addToBackgroundTrack)
+  }
+
+  /// Creates an ``EditorEvent`` to add assets from the photo roll.
+  static var addFromPhotoRoll: Self { Self(addToBackgroundTrack: false) }
 }
 
 public extension EditorEvent where Self == EditorEvents.AddFrom.SystemPhotoRoll {
   /// Creates an ``EditorEvent`` to add assets from the system photo roll.
-  /// - Parameter assetSourceIDs: Added assets will be added to the corresponding asset source based on the asset's
-  /// ``MediaType``.
+  /// - Parameters:
+  ///   - assetSourceIDs: Added assets will be added to the corresponding asset source based on the asset's
+  ///   ``IMGLYCoreUI/MediaType``.
+  ///   - addToBackgroundTrack: Whether to add the asset to the background track. Defaults to `false`.
   /// - Returns: The created ``EditorEvents/AddFrom/SystemPhotoRoll`` event.
   @available(*, deprecated, message: """
   Deprecated in v1.66.0. Please see the changelog for migration details:
@@ -351,8 +403,9 @@ public extension EditorEvent where Self == EditorEvents.AddFrom.SystemPhotoRoll 
   """)
   static func addFromSystemPhotoRoll(
     to assetSourceIDs: [MediaType: String] = EditorEvents.AddFrom.defaultAssetSourceIDs,
+    addToBackgroundTrack: Bool = false,
   ) -> Self {
-    Self(assetSourceIDs: assetSourceIDs)
+    Self(assetSourceIDs: assetSourceIDs, addToBackgroundTrack: addToBackgroundTrack)
   }
 }
 
@@ -368,20 +421,23 @@ public extension EditorEvent where Self == EditorEvents.AddFrom.IMGLYPhotoRoll {
 
 public extension EditorEvent where Self == EditorEvents.AddFrom.SystemCamera {
   /// Creates an ``EditorEvent`` to add assets from the system camera.
-  /// - Parameter assetSourceIDs: Added assets will be added to the corresponding asset source based on the asset's
-  /// ``MediaType``.
+  /// - Parameters:
+  ///   - assetSourceIDs: Added assets will be added to the corresponding asset source based on the asset's
+  ///   ``IMGLYCoreUI/MediaType``.
+  ///   - addToBackgroundTrack: Whether to add the asset to the background track. Defaults to `false`.
   /// - Returns: The created ``EditorEvents/AddFrom/SystemCamera`` event.
   static func addFromSystemCamera(
     to assetSourceIDs: [MediaType: String] = EditorEvents.AddFrom.defaultAssetSourceIDs,
+    addToBackgroundTrack: Bool = false,
   ) -> Self {
-    Self(assetSourceIDs: assetSourceIDs)
+    Self(assetSourceIDs: assetSourceIDs, addToBackgroundTrack: addToBackgroundTrack)
   }
 }
 
 public extension EditorEvent where Self == EditorEvents.AddFrom.IMGLYCamera {
   /// Creates an ``EditorEvent`` to add assets from the IMGLY camera.
   /// - Parameter assetSourceIDs: Added assets will be added to the corresponding asset source based on the asset's
-  /// ``MediaType``.
+  /// ``IMGLYCoreUI/MediaType``.
   /// - Returns: The created ``EditorEvents/AddFrom/IMGLYCamera`` event.
   static func addFromIMGLYCamera(
     to assetSourceIDs: [MediaType: String] = EditorEvents.AddFrom.defaultAssetSourceIDs,

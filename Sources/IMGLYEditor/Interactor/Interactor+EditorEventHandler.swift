@@ -47,6 +47,13 @@ extension Interactor: EditorEventHandler {
       }
     case let event as EditorEvents.SetExtraCanvasInsets:
       zoomToPage(withAdditionalPadding: event.insets)
+    case let event as EditorEvents.SetVideoDurationConstraints:
+      setVideoDurationConstraints(
+        minimumDuration: event.minimumVideoDuration,
+        maximumDuration: event.maximumVideoDuration,
+      )
+    case let event as EditorEvents.ShowVideoMinLengthAlert:
+      showVideoMinLengthAlert(minimumDuration: event.minimumVideoDuration)
 
     // MARK: - Export
     case is EditorEvents.Export.CheckDurationLimitations:
@@ -114,13 +121,13 @@ extension Interactor: EditorEventHandler {
 
     // MARK: - AddFrom
     case let event as EditorEvents.AddFrom.PhotoRoll:
-      openPhotoRoll()
+      openPhotoRoll(addToBackgroundTrack: event.addToBackgroundTrack)
     case let event as EditorEvents.AddFrom.SystemPhotoRoll:
-      openImagePicker(event.assetSourceIDs)
+      openImagePicker(event.assetSourceIDs, addToBackgroundTrack: event.addToBackgroundTrack)
     case is EditorEvents.AddFrom.IMGLYPhotoRoll:
-      openPhotoRoll()
+      openPhotoRoll(addToBackgroundTrack: false)
     case let event as EditorEvents.AddFrom.SystemCamera:
-      openSystemCamera(event.assetSourceIDs)
+      openSystemCamera(event.assetSourceIDs, addToBackgroundTrack: event.addToBackgroundTrack)
     case let event as EditorEvents.AddFrom.IMGLYCamera:
       openCamera(event.assetSourceIDs)
 
@@ -146,7 +153,9 @@ extension Interactor: EditorEventHandler {
 
   // swiftlint:disable:next cyclomatic_complexity
   private func openSheet(_ event: EditorEvents.Sheet.Open) throws {
-    pause()
+    // Pause only if actually playing: a plain `pause()` unconditionally sets the edit mode to
+    // TRANSFORM, which isn't desirable in TEXT edit mode.
+    pauseIfNeeded()
 
     switch event.type {
     case let sheet as SheetTypes.Custom:
@@ -164,12 +173,7 @@ extension Interactor: EditorEventHandler {
         self.sheet = .init(sheet, content)
       }
     case let sheet as SheetTypes.Voiceover:
-      clampPlayheadPositionToSelectedClip()
-      if selection?.blocks.first == nil {
-        openVoiceOver(style: sheet.style)
-      } else {
-        editVoiceOver(style: sheet.style)
-      }
+      openVoiceOver(style: sheet.style)
     case let sheet as SheetTypes.Reorder:
       self.sheet = .init(sheet)
     case let sheet as SheetTypes.Adjustments:
@@ -190,6 +194,11 @@ extension Interactor: EditorEventHandler {
     case let sheet as SheetTypes.Blur:
       clampPlayheadPositionToSelectedClip()
       if let content = sheetContent(sheet.id) ?? sheetContentForSelection {
+        self.sheet = .init(sheet, content)
+      }
+    case let sheet as SheetTypes.Animation:
+      clampPlayheadPositionToSelectedClip()
+      if let content = sheetContentForSelection {
         self.sheet = .init(sheet, content)
       }
     case let sheet as SheetTypes.Crop:

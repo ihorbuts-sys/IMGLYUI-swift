@@ -7,6 +7,14 @@ public extension AssetLoader.SourceData {
   /// - Parameters:
   ///   - demoSource: The demo asset source.
   ///   - config: The configuration query to limit the results of this asset source.
+  @available(
+    *,
+    deprecated,
+    message: """
+    Uses legacy v3-era demo asset source IDs and will be removed in a future version. \
+    Use 'init(id:config:)' with a raw asset source ID string instead.
+    """
+  )
   init(demoSource: Engine.DemoAssetSource, config: AssetLoader.QueryData = .init()) {
     self.init(id: demoSource.rawValue, config: config)
   }
@@ -15,6 +23,14 @@ public extension AssetLoader.SourceData {
   /// - Parameters:
   ///   - defaultSource: The default asset source.
   ///   - config: The configuration query to limit the results of this asset source.
+  @available(
+    *,
+    deprecated,
+    message: """
+    Uses legacy v4 asset source IDs and will be removed in a future version. \
+    Use 'init(id:config:)' with a raw v5 asset source ID string instead.
+    """
+  )
   init(defaultSource: Engine.DefaultAssetSource, config: AssetLoader.QueryData = .init()) {
     self.init(id: defaultSource.rawValue, config: config)
   }
@@ -22,6 +38,34 @@ public extension AssetLoader.SourceData {
 
 /// This is a predefined ``AssetLibrary`` intended to quickly customize some parts of the default asset library without
 /// implementing a complete ``AssetLibrary`` from scratch.
+///
+/// - Important: This type is deprecated. Use the configuration system with `AssetLibraryConfiguration` and
+///   `AssetLibraryCategory` modifications instead. The new approach supports composition across multiple
+///   configurations.
+///
+/// ## Migration
+///
+/// Instead of:
+/// ```swift
+/// .imgly.assetLibrary {
+///   DefaultAssetLibrary()
+///     .images { ... }
+/// }
+/// ```
+///
+/// Use:
+/// ```swift
+/// .imgly.configuration {
+///   AssetLibraryConfiguration { builder in
+///     builder.modify { categories in
+///       categories.modifySections(of: AssetLibraryCategory.ID.images) { sections in
+///         sections.addFirst(.image(id: "custom", title: "Custom", source: .init(id: "custom")))
+///       }
+///     }
+///   }
+/// }
+/// ```
+@available(*, deprecated, message: "Use AssetLibraryConfiguration with AssetLibraryCategory modifications instead.")
 @MainActor
 public struct DefaultAssetLibrary: AssetLibrary {
   /// A tab for a specific asset type.
@@ -30,9 +74,12 @@ public struct DefaultAssetLibrary: AssetLibrary {
   }
 
   /// Creates a default asset library with a selection of `tabs`.
-  /// - Parameter tabs: A custom selection and ordering of the available tabs.
-  public init(tabs: [Tab] = Tab.allCases) {
+  /// - Parameters:
+  ///   - tabs: A custom selection and ordering of the available tabs.
+  ///   - includeAVResources: Whether to include video and audio tabs. Defaults to `false`.
+  public init(tabs: [Tab] = Tab.allCases, includeAVResources: Bool = false) {
     self.tabs = tabs.uniqued()
+    self.includeAVResources = includeAVResources
     videos = Self.videos
     audio = Self.audio
     images = Self.images
@@ -42,6 +89,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   }
 
   private init(tabs: [Tab],
+               includeAVResources: Bool,
                videos: AssetLibraryContent,
                audio: AssetLibraryContent,
                images: AssetLibraryContent,
@@ -49,6 +97,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
                shapes: AssetLibraryContent,
                stickers: AssetLibraryContent) {
     self.tabs = tabs
+    self.includeAVResources = includeAVResources
     self.videos = videos
     self.audio = audio
     self.images = images
@@ -58,6 +107,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   }
 
   let tabs: [Tab]
+  let includeAVResources: Bool
   let videos, audio, images, text, shapes, stickers: AssetLibraryContent
 
   /// Modify the video asset library content.
@@ -66,6 +116,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func videos(@AssetLibraryBuilder videos: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos(),
       audio: audio,
       images: images,
@@ -81,6 +132,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func audio(@AssetLibraryBuilder audio: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos,
       audio: audio(),
       images: images,
@@ -96,6 +148,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func images(@AssetLibraryBuilder images: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos,
       audio: audio,
       images: images(),
@@ -111,6 +164,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func text(@AssetLibraryBuilder text: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos,
       audio: audio,
       images: images,
@@ -126,6 +180,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func shapes(@AssetLibraryBuilder shapes: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos,
       audio: audio,
       images: images,
@@ -141,6 +196,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   public func stickers(@AssetLibraryBuilder stickers: @MainActor () -> AssetLibraryContent) -> Self {
     .init(
       tabs: tabs,
+      includeAVResources: includeAVResources,
       videos: videos,
       audio: audio,
       images: images,
@@ -150,11 +206,11 @@ public struct DefaultAssetLibrary: AssetLibrary {
     )
   }
 
-  static func photoRoll(_ sceneMode: SceneMode?)
+  func photoRoll()
     -> AssetLibrarySource<PhotoRollDestination, PhotoRollPreview, PhotoRollAccessory> {
     AssetLibrarySource.photoRoll(
       .title(.imgly.localized("ly_img_editor_asset_library_section_photo_roll")),
-      media: sceneMode == .video ? [.image, .video] : [.image],
+      media: includeAVResources ? [.image, .video] : [.image],
     )
   }
 
@@ -171,7 +227,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @AssetLibraryBuilder public static var videos: AssetLibraryContent {
     AssetLibrarySource.video(
       .title(.imgly.localized("ly_img_editor_asset_library_section_videos")),
-      source: .init(demoSource: .video),
+      source: .init(id: "ly.img.video"),
     )
     AssetLibrarySource.photoRoll(
       .title(.imgly.localized("ly_img_editor_asset_library_section_photo_roll")),
@@ -183,11 +239,11 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @AssetLibraryBuilder public static var audio: AssetLibraryContent {
     AssetLibrarySource.audio(
       .title(.imgly.localized("ly_img_editor_asset_library_section_audio")),
-      source: .init(demoSource: .audio),
+      source: .init(id: "ly.img.audio"),
     )
     AssetLibrarySource.audioUpload(
       .title(.imgly.localized("ly_img_editor_asset_library_section_audio_uploads")),
-      source: .init(demoSource: .audioUpload),
+      source: .init(id: "ly.img.audio.upload"),
     )
   }
 
@@ -195,7 +251,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @AssetLibraryBuilder public static var images: AssetLibraryContent {
     AssetLibrarySource.image(
       .title(.imgly.localized("ly_img_editor_asset_library_section_images")),
-      source: .init(demoSource: .image),
+      source: .init(id: "ly.img.image"),
     )
     AssetLibrarySource.photoRoll(
       .title(.imgly.localized("ly_img_editor_asset_library_section_photo_roll")),
@@ -211,7 +267,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
     )
     AssetLibrarySource.textComponent(
       .title(.imgly.localized("ly_img_editor_asset_library_section_font_combinations")),
-      source: .init(demoSource: .textComponents),
+      source: .init(id: "ly.img.text.components"),
     )
   }
 
@@ -219,43 +275,35 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @AssetLibraryBuilder public static var shapes: AssetLibraryContent {
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_filled")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/filled"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["filled"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_outline")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/outline"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["outline"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_gradient")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/gradient"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["gradient"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_image")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/image"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["image"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_abstract_filled")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/abstract-filled"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["abstract-filled"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_abstract_outline")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/abstract-outline"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["abstract-outline"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_abstract_gradient")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/abstract-gradient"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["abstract-gradient"])),
     )
     AssetLibrarySource.shape(
       .title(.imgly.localized("ly_img_editor_asset_library_section_abstract_image")),
-      source: .init(defaultSource: .vectorPath,
-                    config: .init(groups: ["//ly.img.cesdk.vectorpaths/category/abstract-image"])),
+      source: .init(id: "ly.img.vector.shape", config: .init(groups: ["abstract-image"])),
     )
   }
 
@@ -263,40 +311,34 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @AssetLibraryBuilder public static var stickers: AssetLibraryContent {
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_emoji")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.emoji/category/emoji"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["emoji"])),
     )
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_emoticons")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.emoticons/category/emoticons"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["emoticons"])),
     )
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_craft")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.craft/category/craft"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["craft"])),
     )
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_3d_stickers")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.3Dstickers/category/3Dstickers"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["3Dstickers"])),
     )
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_hand")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.hand/category/hand"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["hand"])),
     )
     AssetLibrarySource.sticker(
       .title(.imgly.localized("ly_img_editor_asset_library_section_doodle")),
-      source: .init(defaultSource: .sticker,
-                    config: .init(groups: ["//ly.img.cesdk.stickers.doodle/category/doodle"])),
+      source: .init(id: "ly.img.sticker", config: .init(groups: ["doodle"])),
     )
   }
 
-  func tabContent(_ sceneMode: SceneMode?, _ tab: Tab) -> AssetLibraryContent {
+  func tabContent(_ tab: Tab) -> AssetLibraryContent {
     switch tab {
     case .elements: AssetLibraryGroup.empty
-    case .photoRoll: Self.photoRoll(sceneMode)
+    case .photoRoll: photoRoll()
     case .videos: videos
     case .audio: audio
     case .images: images
@@ -306,17 +348,17 @@ public struct DefaultAssetLibrary: AssetLibrary {
     }
   }
 
-  func elementsContent(_ sceneMode: SceneMode?, _ tab: Tab) -> AssetLibraryContent {
+  func elementsContent(_ tab: Tab) -> AssetLibraryContent {
     switch tab {
     case .elements: AssetLibraryGroup.empty
-    case .photoRoll: Self.photoRoll(sceneMode)
+    case .photoRoll: photoRoll()
     case .videos: AssetLibraryGroup.video(.imgly.localized("ly_img_editor_asset_library_section_videos")) { videos }
     case .audio: AssetLibraryGroup.audio(.imgly.localized("ly_img_editor_asset_library_section_audio")) { audio }
     case .images: AssetLibraryGroup.image(.imgly.localized("ly_img_editor_asset_library_section_images")) { images }
     case .text:
       AssetLibraryGroup.text(
         .imgly.localized("ly_img_editor_asset_library_section_text"),
-        excludedPreviewSources: [Engine.DemoAssetSource.textComponents.rawValue],
+        excludedPreviewSources: ["ly.img.text.components"],
       ) {
         text
       }
@@ -329,7 +371,7 @@ public struct DefaultAssetLibrary: AssetLibrary {
   @ViewBuilder func tabView(_ tab: Tab) -> some View {
     switch tab {
     case .elements: elementsTab
-    case .photoRoll: Self.photoRollTab
+    case .photoRoll: photoRollTab
     case .videos: videosTab
     case .audio: audioTab
     case .images: imagesTab
@@ -339,27 +381,27 @@ public struct DefaultAssetLibrary: AssetLibrary {
     }
   }
 
-  func activeTabs(_ sceneMode: SceneMode?) -> [Tab] {
+  func activeTabs() -> [Tab] {
     tabs.filter { tab in
-      let isNotEmpty = !tabContent(sceneMode, tab).isEmpty
+      let isNotEmpty = !tabContent(tab).isEmpty
       switch tab {
       case .elements:
         return true
       case .videos, .audio:
-        return isNotEmpty && sceneMode == .video
+        return isNotEmpty && includeAVResources
       default:
         return isNotEmpty
       }
     }
   }
 
-  func activeElements(_ sceneMode: SceneMode?) -> [Tab] {
-    activeTabs(sceneMode).filter { $0 != .elements }
+  func activeElements() -> [Tab] {
+    activeTabs().filter { $0 != .elements }
   }
 
-  @AssetLibraryBuilder func elements(_ sceneMode: SceneMode?) -> AssetLibraryContent {
-    for tab in activeElements(sceneMode) {
-      elementsContent(sceneMode, tab)
+  @AssetLibraryBuilder func elements() -> AssetLibraryContent {
+    for tab in activeElements() {
+      elementsContent(tab)
     }
   }
 
@@ -445,23 +487,19 @@ public struct DefaultAssetLibrary: AssetLibrary {
     }
   }
 
-  @_spi(Internal) @ViewBuilder public static var photoRollTab: some View {
-    AssetLibrarySceneModeReader { sceneMode in
-      AssetLibraryTabView(.imgly.localized("ly_img_editor_asset_library_title_photo_roll")) {
-        photoRoll(sceneMode).content
-      } label: {
-        photoRollLabel($0)
-      }
+  @ViewBuilder public var photoRollTab: some View {
+    AssetLibraryTabView(.imgly.localized("ly_img_editor_asset_library_title_photo_roll")) {
+      photoRoll().content
+    } label: {
+      Self.photoRollLabel($0)
     }
   }
 
   @ViewBuilder public var elementsTab: some View {
-    AssetLibrarySceneModeReader { sceneMode in
-      AssetLibraryTab(.imgly.localized("ly_img_editor_asset_library_title_elements")) {
-        elements(sceneMode)
-      } label: {
-        Self.elementsLabel($0)
-      }
+    AssetLibraryTab(.imgly.localized("ly_img_editor_asset_library_title_elements")) {
+      elements()
+    } label: {
+      Self.elementsLabel($0)
     }
   }
 
@@ -528,24 +566,22 @@ public struct DefaultAssetLibrary: AssetLibrary {
 
   public var body: some View {
     TabView {
-      AssetLibrarySceneModeReader { sceneMode in
-        let activeTabs = activeTabs(sceneMode)
-        if activeTabs.count > 5 {
-          if activeTabs.contains(.elements), activeTabs.contains(.photoRoll),
-             activeTabs.count == 6 {
-            let tabsWithoutPhotoRoll = activeTabs.filter { $0 != .photoRoll }
-            tabViews(tabsWithoutPhotoRoll)
-          } else {
-            let tabs = activeTabs.prefix(4)
-            let moreTabs = activeTabs.dropFirst(4)
-            tabViews(tabs)
-            AssetLibraryMoreTab {
-              tabViews(moreTabs)
-            }
-          }
+      let activeTabs = activeTabs()
+      if activeTabs.count > 5 {
+        if activeTabs.contains(.elements), activeTabs.contains(.photoRoll),
+           activeTabs.count == 6 {
+          let tabsWithoutPhotoRoll = activeTabs.filter { $0 != .photoRoll }
+          tabViews(tabsWithoutPhotoRoll)
         } else {
-          tabViews(activeTabs)
+          let tabs = activeTabs.prefix(4)
+          let moreTabs = activeTabs.dropFirst(4)
+          tabViews(tabs)
+          AssetLibraryMoreTab {
+            tabViews(moreTabs)
+          }
         }
+      } else {
+        tabViews(activeTabs)
       }
     }
   }

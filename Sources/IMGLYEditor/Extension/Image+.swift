@@ -32,9 +32,6 @@ public extension IMGLY where Wrapped == Image {
   /// An icon image for adding a voiceover.
   static let addVoiceover = Wrapped("custom.mic.badge.plus", bundle: .module)
 
-  /// An icon image for editing a voiceover.
-  static let editVoiceover = Wrapped("custom.waveform.badge.mic", bundle: .module)
-
   /// An icon image for reoder.
   static let reorder = Wrapped(systemName: "rectangle.portrait.arrowtriangle.2.outward")
   /// An icon image for adjustments.
@@ -49,6 +46,8 @@ public extension IMGLY where Wrapped == Image {
   static let volume = Wrapped(systemName: "speaker.wave.3.fill")
   /// An icon image for clip speed.
   static let clipSpeed = Wrapped(systemName: "hare")
+  /// An icon image for animation.
+  static let animation = Wrapped("custom.circle.dotted.and.circle", bundle: .module)
   /// An icon image for crop.
   static let crop = Wrapped(systemName: "crop.rotate")
   /// An icon image for resize.

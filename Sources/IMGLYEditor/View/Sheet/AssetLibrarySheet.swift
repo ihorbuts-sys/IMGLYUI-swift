@@ -4,11 +4,12 @@ import SwiftUI
 struct AssetLibrarySheet: View {
   let content: SheetContent?
 
-  @Environment(\.imglyAssetLibrary) private var anyAssetLibrary
+  @Environment(\.imglyEditorEnvironment) private var editorEnvironment
 
   @MainActor
   var assetLibrary: some AssetLibrary {
-    anyAssetLibrary ?? AnyAssetLibrary(erasing: DefaultAssetLibrary())
+    let categories = AssetLibraryCategory.defaultCategories
+    return AnyAssetLibrary(erasing: editorEnvironment.makeAssetLibrary(defaultCategories: categories))
   }
 
   var body: some View {
@@ -18,6 +19,7 @@ struct AssetLibrarySheet: View {
     case .shape: assetLibrary.shapesTab
     case .sticker: assetLibrary.stickersTab
     case .clip: assetLibrary.clipsTab
+    case .video: assetLibrary.videosTab
     case .audio: assetLibrary.audioTab
     default: assetLibrary
     }

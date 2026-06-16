@@ -1,6 +1,7 @@
 @_spi(Internal) import IMGLYCore
 @_spi(Internal) import IMGLYCoreUI
 @_spi(Internal) import enum IMGLYCoreUI.HorizontalAlignment
+@_spi(Internal) import IMGLYEngine
 import SwiftUI
 
 struct TextFormatOptions: View {
@@ -16,11 +17,11 @@ struct TextFormatOptions: View {
         fontWeightSelection
         fontSizeSelection
         alignmentSelection
+        letterOptions
         if interactor.isAllowed(id, scope: .layerResize) {
           frameBehavior
           clipping
         }
-        letterOptions
       }
     }
   }
@@ -28,12 +29,12 @@ struct TextFormatOptions: View {
   // MARK: - @ViewBuilder
 
   @ViewBuilder var fontSelection: some View {
-    let textReset = interactor.bindTextState(id, resetFontProperties: true)
+    let fontAssetID = interactor.bindFontAssetID(id)
 
     NavigationLinkPicker(
       title: .imgly.localized("ly_img_editor_sheet_format_text_label_font"),
       data: [fontLibrary.assets],
-      selection: textReset.assetID,
+      selection: fontAssetID,
     ) { asset, isSelected in
       FontLoader(fontURL: asset.result.payload?.typeface?.previewFont?.uri) { fontName in
         Label(asset.labelOrTypefaceName ?? "Unnamed Typeface", systemImage: "checkmark")
@@ -48,19 +49,18 @@ struct TextFormatOptions: View {
   }
 
   @ViewBuilder var fontWeightSelection: some View {
-    let text = interactor.bindTextState(id, resetFontProperties: false)
-
     HStack(spacing: 32) {
-      PropertyButton(property: .bold, selection: text.bold)
-      PropertyButton(property: .italic, selection: text.italic)
+      PropertyButton(property: .bold, selection: interactor.bindBoldToggle(id))
+      PropertyButton(property: .italic, selection: interactor.bindItalicToggle(id))
+      PropertyButton(property: .underline, selection: interactor.bindUnderlineToggle(id))
+      PropertyButton(property: .strikethrough, selection: interactor.bindStrikethroughToggle(id))
       Spacer()
-      let selection: Binding<String?> = interactor.bind(id) { engine, block in
-        let typeface = try engine.block.getTypeface(block)
-        let styles = try engine.block.getTextFontStyles(block).first
-        let weights = try engine.block.getTextFontWeights(block).first
-        let currentFont = typeface.fonts.first { $0.style == styles && $0.weight == weights }
-        return currentFont?.id ?? ""
+      let selection: Binding<String?> = interactor.bind(
+        id, default: nil as String?,
+      ) { engine, block -> String? in
+        try engine.block.resolveTextFontID(block)
       } setter: { engine, blocks, value, completion in
+        guard let value else { return false }
         let changed = try blocks.filter {
           let typeface = try engine.block.getTypeface($0)
           let styles = try engine.block.getTextFontStyles($0).first
@@ -88,12 +88,18 @@ struct TextFormatOptions: View {
         let nonItalicFonts = sortedFonts.filter { $0.style != .italic }
         let italicFonts = sortedFonts.filter { $0.style == .italic }
 
-        NavigationLinkPicker(title: "Font Weight", data: [nonItalicFonts, italicFonts],
-                             inlineTitle: false, selection: selection) { asset, isSelected in
+        NavigationLinkPicker(
+          title: .imgly.localized("ly_img_editor_sheet_format_text_label_font_weight"),
+          data: [nonItalicFonts, italicFonts],
+          inlineTitle: false,
+          selection: selection,
+        ) { asset, isSelected in
           FontLabel(fontURL: asset.uri, isSelected: isSelected, title: asset.localizedSubFamiliy)
         } linkLabel: { selection in
           if let selection {
             Text(selection.localizedSubFamiliy)
+          } else {
+            Text(.imgly.localized("ly_img_editor_sheet_format_text_font_subfamily_mixed"))
           }
         }
       }
@@ -103,14 +109,19 @@ struct TextFormatOptions: View {
   }
 
   @ViewBuilder var fontSizeSelection: some View {
+    // Read the scene's font-size unit so the slider range and label match what the engine
+    // returns from the unit-aware text/fontSize property.
+    let fontUnit: Interactor.FontUnit = (try? interactor.engine?.scene.getFontSizeUnit()) ?? .pt
+    let fontSizeRange: ClosedRange<Float> = fontUnit == .px ? 8 ... 128 : 6 ... 90
+    let unitSuffix = fontUnit == .px ? " (px)" : " (pt)"
     Section {
       PropertySlider<Float>(
         .imgly.localized("ly_img_editor_sheet_format_text_label_font_size"),
-        in: 6 ... 90,
+        in: fontSizeRange,
         property: .key(.textFontSize)
       )
     } header: {
-      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_font_size"))
+      Text(String(localized: .imgly.localized("ly_img_editor_sheet_format_text_label_font_size")) + unitSuffix)
     }
   }
 
@@ -120,8 +131,7 @@ struct TextFormatOptions: View {
         let alignmentX: Binding<HorizontalAlignment?> = interactor.bind(id, property: .key(.textHorizontalAlignment))
         let effectiveAlignmentX: HorizontalAlignment? = id.flatMap { blockID in
           interactor.get(blockID) { engine, block in
-            let alignmentString = try engine.block.getTextEffectiveHorizontalAlignment(block)
-            return HorizontalAlignment(rawValue: alignmentString) ?? .left
+            HorizontalAlignment(try engine.block.getTextEffectiveHorizontalAlignment(block))
           }
         }
         HStack(spacing: 16) {
@@ -132,7 +142,14 @@ struct TextFormatOptions: View {
             Label {
               Text(HorizontalAlignment.auto.localizedStringResource)
             } icon: {
-              Image(HorizontalAlignment.auto.autoImageName(forEffectiveAlignment: effectiveAlignmentX), bundle: .module)
+              // Only use effectiveAlignment when stored alignment is Auto, because that's
+              // when getTextEffectiveHorizontalAlignment resolves based on actual text direction.
+              Image(
+                HorizontalAlignment.auto.autoImageName(
+                  forEffectiveAlignment: alignmentX.wrappedValue == .auto ? effectiveAlignmentX : nil,
+                ),
+                bundle: .module,
+              )
             }
             .symbolRenderingMode(.monochrome)
           }
@@ -230,6 +247,33 @@ struct TextFormatOptions: View {
 
   @ViewBuilder var letterOptions: some View {
     Section {
+      HStack {
+        let letterCase = interactor.bindLetterCase(id)
+        PropertyButton(property: .normal, selection: letterCase, allowsDeselection: false)
+        Spacer()
+        PropertyButton(property: .uppercase, selection: letterCase, allowsDeselection: false)
+        Spacer()
+        PropertyButton(property: .lowercase, selection: letterCase, allowsDeselection: false)
+        Spacer()
+        PropertyButton(property: .titlecase, selection: letterCase, allowsDeselection: false)
+      }
+      .padding([.leading, .trailing], 16)
+      .labelStyle(.iconOnly)
+      .buttonStyle(.borderless)
+    } header: {
+      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_letter_case"))
+    }
+    Section {
+      PropertySlider<Float>(
+        .imgly.localized("ly_img_editor_sheet_format_text_label_letter_spacing"),
+        in: -0.15 ... 1.4,
+        property: .key(.textLetterSpacing)
+      )
+    } header: {
+      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_letter_spacing"))
+    }
+    listStyleSelection
+    Section {
       PropertySlider<Float>(
         .imgly.localized("ly_img_editor_sheet_format_text_label_line_height"),
         in: 0.5 ... 2.5,
@@ -247,46 +291,30 @@ struct TextFormatOptions: View {
     } header: {
       Text(.imgly.localized("ly_img_editor_sheet_format_text_label_paragraph_spacing"))
     }
+  }
+
+  @ViewBuilder var listStyleSelection: some View {
     Section {
       HStack {
-        let letterCase: Binding<Interactor.TextCase?> = interactor.bind(id) { engine, block in
-          let textCase = try engine.block.getTextCases(block).first
-          return textCase ?? .normal
-        } setter: { engine, blocks, value, completion in
-          let changed = try blocks.filter {
-            let textCase = try engine.block.getTextCases($0).first
-            return textCase != value
-          }
+        let listStyle = interactor.bindListStyle(id)
 
-          try changed.forEach {
-            try engine.block.setTextCase($0, textCase: value)
-          }
+        // Wrap so that PropertyButton's toggle-off (nil) maps to .none instead of mixed state.
+        let mappedListStyle = Binding<IMGLYEngine.ListStyle?>(
+          get: { listStyle.wrappedValue },
+          set: { listStyle.wrappedValue = $0 ?? .none },
+        )
 
-          let didChange = !changed.isEmpty
-          return try (completion?(engine, blocks, didChange) ?? false) || didChange
-        }
-        PropertyButton(property: .normal, selection: letterCase)
+        PropertyButton(property: ListStyle.none, selection: mappedListStyle)
         Spacer()
-        PropertyButton(property: .uppercase, selection: letterCase)
+        PropertyButton(property: ListStyle.unordered, selection: mappedListStyle)
         Spacer()
-        PropertyButton(property: .lowercase, selection: letterCase)
-        Spacer()
-        PropertyButton(property: .titlecase, selection: letterCase)
+        PropertyButton(property: ListStyle.ordered, selection: mappedListStyle)
       }
       .padding([.leading, .trailing], 16)
       .labelStyle(.iconOnly)
       .buttonStyle(.borderless)
     } header: {
-      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_letter_case"))
-    }
-    Section {
-      PropertySlider<Float>(
-        .imgly.localized("ly_img_editor_sheet_format_text_label_letter_spacing"),
-        in: -0.15 ... 1.4,
-        property: .key(.textLetterSpacing)
-      )
-    } header: {
-      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_letter_spacing"))
+      Text(.imgly.localized("ly_img_editor_sheet_format_text_label_list_style"))
     }
   }
 }

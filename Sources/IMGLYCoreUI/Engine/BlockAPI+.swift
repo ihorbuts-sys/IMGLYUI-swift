@@ -250,25 +250,54 @@ extension MappedType {
 // MARK: - Crop
 
 @_spi(Internal) public extension BlockAPI {
-  func canResetCrop(_ id: DesignBlockID) throws -> Bool {
-    try getContentFillMode(id) == .crop
+  /// Whether the Crop sheet's Reset button should be enabled. The engine
+  /// recomputes crop translation from the block frame on every `resetCrop`, so
+  /// the caller owns `initialCropTranslation*` as a baseline.
+  func canResetCrop(
+    _ id: DesignBlockID,
+    initialCropTranslationX: Float,
+    initialCropTranslationY: Float,
+  ) throws -> Bool {
+    if try getContentFillMode(id) != .crop { return true }
+    if try getCropRotation(id) != 0 { return true }
+    if try getCropScaleX(id) < 1 { return true }
+    if try getCropScaleY(id) < 1 { return true }
+    if try getCropScaleRatio(id) != 1 { return true }
+    if try getCropTranslationX(id) != initialCropTranslationX { return true }
+    if try getCropTranslationY(id) != initialCropTranslationY { return true }
+    return false
   }
 }
 
 // MARK: - Layering
 
 @_spi(Internal) public extension BlockAPI {
+  /// Whether ``bringForward(_:)`` would change layout. Any clip in a multi-clip
+  /// track returns `true` — the engine pops it out before walking siblings.
   func canBringForward(_ id: DesignBlockID) throws -> Bool {
     guard let parent = try getParent(id) else {
       return false
+    }
+    if try getType(parent) == DesignBlockType.track.rawValue {
+      if try getChildren(parent).count > 1 {
+        return true
+      }
+      return try canBringForward(parent)
     }
     let children = try getReorderableChildren(parent, child: id)
     return children.last != id
   }
 
+  /// Mirror of ``canBringForward(_:)``.
   func canBringBackward(_ id: DesignBlockID) throws -> Bool {
     guard let parent = try getParent(id) else {
       return false
+    }
+    if try getType(parent) == DesignBlockType.track.rawValue {
+      if try getChildren(parent).count > 1 {
+        return true
+      }
+      return try canBringBackward(parent)
     }
     let children = try getReorderableChildren(parent, child: id)
     return children.first != id
@@ -279,44 +308,41 @@ extension MappedType {
   func getReorderableChildren(_ parent: DesignBlockID, child: DesignBlockID) throws -> [IMGLYEngine.DesignBlockID] {
     let childIsAlwaysOnTop = try isAlwaysOnTop(child)
     let childIsAlwaysOnBottom = try isAlwaysOnBottom(child)
-    let childType = try getType(child)
+    let childIsAudioLike = try isAudioLike(child)
 
     return try getChildren(parent).filter {
       let matchingIsAlwaysOnTop = try childIsAlwaysOnTop == isAlwaysOnTop($0)
       let matchingIsAlwaysOnBottom = try childIsAlwaysOnBottom == isAlwaysOnBottom($0)
-      let matchingType: Bool = switch childType {
-      case DesignBlockType.audio.rawValue:
-        try DesignBlockType.audio.rawValue == getType($0)
-      default:
-        try DesignBlockType.audio.rawValue != getType($0)
-      }
-      return matchingIsAlwaysOnTop && matchingIsAlwaysOnBottom && matchingType
+      let matchingIsAudioLike = try childIsAudioLike == isAudioLike($0)
+      return matchingIsAlwaysOnTop && matchingIsAlwaysOnBottom && matchingIsAudioLike
     }
+  }
+
+  /// Audio block, or a track whose first child is audio. Mirrors the engine's
+  /// `isOrderedWith` audio bucket — also used by the iOS timeline to keep
+  /// audio-bearing tracks pinned to the audio lane.
+  func isAudioLike(_ id: DesignBlockID) throws -> Bool {
+    let type = try getType(id)
+    if type == DesignBlockType.audio.rawValue { return true }
+    guard type == DesignBlockType.track.rawValue,
+          let firstChild = try getChildren(id).first else { return false }
+    return try getType(firstChild) == DesignBlockType.audio.rawValue
   }
 }
 
 // MARK: - Fonts
 
 @_spi(Internal) public extension BlockAPI {
-  func isBoldFont(_ id: DesignBlockID) throws -> Bool {
-    try getTextFontWeights(id).contains { $0.rawValue >= 700 }
+  /// Whether every character in `subrange` (or the whole text when `nil`) is bold.
+  func isBoldFont(_ id: DesignBlockID, in subrange: Range<String.Index>? = nil) throws -> Bool {
+    let weights = try getTextFontWeights(id, in: subrange)
+    return !weights.isEmpty && weights.allSatisfy { $0 == .bold }
   }
 
-  func isItalicFont(_ id: DesignBlockID) throws -> Bool {
-    try getTextFontStyles(id).contains(.italic)
-  }
-
-  func getFontProperties(_ id: DesignBlockID) throws -> FontProperties? {
-    switch try (canToggleBoldFont(id), canToggleItalicFont(id)) {
-    case (true, true):
-      try .init(bold: isBoldFont(id), italic: isItalicFont(id))
-    case (false, true):
-      try .init(bold: nil, italic: isItalicFont(id))
-    case (true, false):
-      try .init(bold: isBoldFont(id), italic: nil)
-    case (false, false):
-      nil
-    }
+  /// Whether every character in `subrange` (or the whole text when `nil`) is italic.
+  func isItalicFont(_ id: DesignBlockID, in subrange: Range<String.Index>? = nil) throws -> Bool {
+    let styles = try getTextFontStyles(id, in: subrange)
+    return !styles.isEmpty && styles.allSatisfy { $0 == .italic }
   }
 }
 
@@ -426,34 +452,6 @@ extension MappedType {
     try findAllSelected().forEach {
       try setSelected($0, selected: false)
     }
-  }
-
-  func addOutline(_ name: String? = nil, for id: DesignBlockID, to parent: DesignBlockID) throws -> DesignBlockID {
-    let outline = try create(.graphic)
-    let rect = try createShape(.rect)
-    try setShape(outline, shape: rect)
-
-    let height = try getHeight(id)
-    let width = try getWidth(id)
-
-    if let name {
-      try setName(outline, name: name)
-    }
-    try setHeightMode(outline, mode: .absolute)
-    try setHeight(outline, value: height)
-    try setWidthMode(outline, mode: .absolute)
-    try setWidth(outline, value: width)
-    try appendChild(to: parent, child: outline)
-
-    try set(outline, property: .key(.fillEnabled), value: false)
-    try set(outline, property: .key(.strokeEnabled), value: true)
-    try set(outline, property: .key(.strokeColor), value: CGColor.imgly.white)
-    try set(outline, property: .key(.strokeStyle), value: StrokeStyle.dotted)
-    try set(outline, property: .key(.strokeWidth), value: 1.0)
-    try set(outline, property: .key(.blendMode), value: BlendMode.difference)
-    try setScopeEnabled(outline, scope: .key(.editorSelect), enabled: false)
-
-    return outline
   }
 }
 
