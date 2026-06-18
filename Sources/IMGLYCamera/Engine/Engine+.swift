@@ -62,8 +62,13 @@ private extension Engine {
       recordings.unionRect()
     }
 
+    var seedDuration = firstRecording.duration.seconds
+    if let maxTrimmingDuration {
+      seedDuration = min(maxTrimmingDuration, seedDuration)
+    }
+
     // Create a scene with the first video on the background track
-    try await createScene(with: firstVideo, frame: frame)
+    try await createScene(with: firstVideo, frame: frame, duration: seedDuration)
     guard let pageID = try scene.getCurrentPage() else {
       throw Error(errorDescription: "Failed to get current page.")
     }
@@ -201,11 +206,14 @@ private extension Engine {
   /// - Parameters:
   ///   - video: The video.
   ///   - frame: The frame of the scene.
+  ///   - duration: When set, the seed video's trim length and duration are set so the scene becomes a
+  ///     proper video/timeline scene. Pass `nil` to leave the engine-derived duration untouched.
   /// - Returns: A tuple containing the block IDs for the video and its fill.
   @discardableResult
   func createScene(
     with video: Recording.Video,
     frame: CGRect,
+    duration: Double? = nil,
   ) async throws -> (video: DesignBlockID, videoFill: DesignBlockID) {
     // Create a scene with the video being reacted to.
     try await scene.create(fromVideo: video.url)
@@ -217,7 +225,24 @@ private extension Engine {
       throw Error(errorDescription: "Failed to find the video block.")
     }
     let fill = try block.getFill(videoBlock)
-    try block.setFrame(videoBlock, value: video.rect)
+    // Fork fix (859e9dd "Fix frame issue"): the seed video block must use the scene/page `frame`,
+    // not the raw `video.rect`. Using `video.rect` makes a tall gallery video overflow the screen and
+    // pushes the timeline out of view. Re-applied after the 1.77 merge took upstream's `video.rect`.
+    try block.setFrame(videoBlock, value: frame)
+
+    // Fork fix (restored): set the seed video's trim length + duration so the scene is a video/timeline
+    // scene. Without this, a single gallery video (whose only clip is skipped by `addCaptures`) leaves the
+    // page with no time dimension — the editor then renders it as a static design page (no timeline) and
+    // exports it as an image. The 1.77 merge took upstream's overload, which dropped this `duration` setup.
+    if
+      let duration,
+      let isTrimSupported = try? block.supportsTrim(fill), isTrimSupported,
+      let isDurationSupported = try? block.supportsDuration(videoBlock), isDurationSupported
+    {
+      try block.setTrimLength(fill, length: duration)
+      try block.setDuration(videoBlock, duration: duration)
+    }
+
     return (videoBlock, fill)
   }
 

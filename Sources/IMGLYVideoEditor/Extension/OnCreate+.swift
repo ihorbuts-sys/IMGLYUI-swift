@@ -13,7 +13,7 @@ public extension OnCreate {
   static func loadVideos(from result: CameraResult) -> Callback {
     { engine in
       try await engine.createScene(from: result)
-      try await engine.loadDefaultAndDemoAssetSources()
+      await engine.loadDefaultAndDemoAssetSources()
     }
   }
 }
@@ -33,20 +33,83 @@ public extension OnCreate {
   ) -> Callback {
     { engine in
       try await engine.createScene(from: result, size: size, maxTrimmingDuration: maxTrimmingDuration)
-      try await engine.loadDefaultAndDemoAssetSources()
+      await engine.loadDefaultAndDemoAssetSources()
     }
   }
 }
 
 private extension Engine {
   /// Registers the default and demo asset sources plus the text and photo-roll sources.
-  /// Replaces the removed `OnCreate.loadAssetSources` helper (upstream folded asset loading into
-  /// per-solution defaults as of 1.76).
-  func loadDefaultAndDemoAssetSources() async throws {
-    async let loadDefault: () = addDefaultAssetSources()
-    async let loadDemo: () = addDemoAssetSources(withUploadAssetSources: true)
-    _ = try await (loadDefault, loadDemo)
-    try await asset.addSource(TextAssetSource(engine: self))
-    try asset.addSource(PhotoRollAssetSource(engine: self))
+  ///
+  /// Uses the v5 `addLocalAssetSourceFromJSON(<baseURL>/<id>/content.json)` registration instead of the
+  /// deprecated `addDefaultAssetSources()` / `addDemoAssetSources()` helpers. Those helpers SKIP the
+  /// sources that were renamed/merged in v5 (`filter.lut`+`filter.duotone`→`ly.img.filter`,
+  /// `vectorpath`→`ly.img.vector.shape`, …) when run against the v5 CDN, which left the inspector-bar
+  /// Filter/Effect/Blur pickers showing "Cannot connect to service". This mirrors upstream's own v5
+  /// registration recipe (see `AssetLibraryInteractorMock`).
+  ///
+  /// Each registration is isolated so a single source failure can't abort the rest — most importantly it
+  /// must not prevent the caller from registering its own custom sources afterwards.
+  func loadDefaultAndDemoAssetSources() async {
+    let baseURL = configuredAssetBaseURL
+
+    // Default content sources (effects, filters, blur, shapes, stickers, text, presets, …).
+    let defaultSourceIDs = [
+      "ly.img.sticker", "ly.img.vector.shape", "ly.img.filter", "ly.img.color.palette",
+      "ly.img.effect", "ly.img.blur", "ly.img.typeface", "ly.img.crop.presets",
+      "ly.img.page.presets", "ly.img.text", "ly.img.text.components",
+      "ly.img.caption.presets",
+    ]
+    // Remote demo content sources.
+    let remoteDemoSourceIDs = ["ly.img.image", "ly.img.audio", "ly.img.video"]
+
+    for id in defaultSourceIDs + remoteDemoSourceIDs {
+      await registerQuietly(id) {
+        _ = try await self.asset.addLocalAssetSourceFromJSON(
+          baseURL.appendingPathComponent(id).appendingPathComponent("content.json"),
+        )
+      }
+    }
+
+    // Upload demo sources (let the user import their own media).
+    let uploadDemoSources: [(id: String, mimeTypes: [String])] = [
+      ("ly.img.image.upload", ["image/jpeg", "image/png", "image/svg+xml", "image/gif", "image/apng", "image/bmp"]),
+      ("ly.img.audio.upload", ["audio/x-m4a", "audio/mp3", "audio/mpeg"]),
+      ("ly.img.video.upload", ["video/mp4"]),
+    ]
+    for source in uploadDemoSources {
+      registerQuietly(source.id) {
+        try self.asset.addLocalSource(sourceID: source.id, supportedMimeTypes: source.mimeTypes)
+      }
+    }
+
+    await registerQuietly("text asset source") { try await self.asset.addSource(TextAssetSource(engine: self)) }
+    registerQuietly("photo-roll asset source") { try self.asset.addSource(PhotoRollAssetSource(engine: self)) }
+  }
+
+  /// The asset base URL the engine was configured with (via `EngineSettings.baseURL` → `basePath`
+  /// setting), falling back to the framework default.
+  private var configuredAssetBaseURL: URL {
+    if let basePath = try? editor.getSettingString("basePath"),
+       let url = URL(string: basePath) {
+      return url
+    }
+    return Engine.assetBaseURL
+  }
+
+  private func registerQuietly(_ label: String, _ work: () async throws -> Void) async {
+    do {
+      try await work()
+    } catch {
+      print("[IMGLY] Skipped registering \(label): \(error)")
+    }
+  }
+
+  private func registerQuietly(_ label: String, _ work: () throws -> Void) {
+    do {
+      try work()
+    } catch {
+      print("[IMGLY] Skipped registering \(label): \(error)")
+    }
   }
 }

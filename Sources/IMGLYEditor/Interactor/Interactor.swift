@@ -1736,6 +1736,10 @@ extension Interactor {
 
   func checkDurationBeforeExport() {
     pause()
+    // Reset the cancel flag at the start of every export attempt. Otherwise a previously cancelled
+    // export leaves `exportCanceled == true` and silently swallows the completion sheet of this new
+    // attempt (the flag was only ever reset in the Export.Progress handler, which doesn't always fire).
+    exportCanceled = false
     let lastTask = exportTask
     lastTask?.cancel()
     isExporting = true
@@ -1779,6 +1783,9 @@ extension Interactor {
 
   func exportScene() {
     pause()
+    // See checkDurationBeforeExport(): reset the cancel flag so a prior cancellation can't swallow
+    // this attempt's completion sheet.
+    exportCanceled = false
     let lastTask = exportTask
     lastTask?.cancel()
     isExporting = true
