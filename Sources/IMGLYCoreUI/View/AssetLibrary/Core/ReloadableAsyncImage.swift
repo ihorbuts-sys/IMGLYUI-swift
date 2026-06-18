@@ -1,4 +1,4 @@
-import IMGLYCore
+@_spi(Internal) import IMGLYCore
 import IMGLYEngine
 import Kingfisher
 import SwiftUI
@@ -11,10 +11,20 @@ import SwiftUI
 
   @_spi(Internal) public init(asset: AssetLoader.Asset, content: @escaping (KFImage) -> Content,
                               onTap: @escaping () -> Void) {
-    url = asset.thumbURLorURL
+    // Only fall back to the asset `uri` as a thumbnail for assets whose `uri` is itself an image
+    // (images/videos). Audio assets have an audio `uri` that can't be rendered as an image, so without a
+    // real `thumbUri` we use no URL at all and show a clean empty tile instead of a failed-load badge.
+    if asset.result.blockType == DesignBlockType.audio.rawValue {
+      url = asset.result.thumbURL
+    } else {
+      url = asset.thumbURLorURL
+    }
     accessibilityLabel = asset.result.label ?? ""
     self.content = content
     self.onTap = onTap
+    // With no thumbnail URL there is nothing to load — start in `.loaded` so we show a clean empty tile
+    // instead of an endless loading shimmer.
+    _state = State(initialValue: url == nil ? .loaded : .loading)
   }
 
   @_spi(Internal) public init(url: URL?, accessibilityLabel: String,
@@ -24,9 +34,10 @@ import SwiftUI
     self.accessibilityLabel = accessibilityLabel
     self.content = content
     self.onTap = onTap
+    _state = State(initialValue: url == nil ? .loaded : .loading)
   }
 
-  @State private var state = LoadingState.loading
+  @State private var state: LoadingState
 
   @ViewBuilder private var background: some View {
     GridItemBackground()
